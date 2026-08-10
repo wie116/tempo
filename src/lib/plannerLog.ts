@@ -6,6 +6,9 @@ export interface LeftoverEntry {
   reason: string;
 }
 
+/** Referencia estable: nunca crear un [] nuevo dentro de un selector de Zustand. */
+export const EMPTY_LEFTOVER: LeftoverEntry[] = [];
+
 interface PlannerLogStore {
   /** Lo que quedó afuera del último autoplan aplicado hoy. */
   leftover: LeftoverEntry[];

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { Block } from '../types';
 import { useClock, useStore } from '../store';
 import { dateKey, durationLabel, hhmm, minutesOf } from '../lib/time';
-import { usePlannerLog } from '../lib/plannerLog';
+import { EMPTY_LEFTOVER, usePlannerLog } from '../lib/plannerLog';
 
 const pad = (n: number) => String(Math.floor(n)).padStart(2, '0');
 
@@ -37,7 +37,11 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
     () => today.filter((b) => b.status === 'skipped' && b.kind !== 'break'),
     [today]
   );
-  const leftover = usePlannerLog((s) => (s.dayKey === todayKey ? s.leftover : []));
+  // Nunca devolver un [] literal desde el selector: crearía una referencia
+  // nueva en cada render y Zustand entraría en un bucle de actualizaciones.
+  const plannerDayKey = usePlannerLog((s) => s.dayKey);
+  const plannerLeftover = usePlannerLog((s) => s.leftover);
+  const leftover = plannerDayKey === todayKey ? plannerLeftover : EMPTY_LEFTOVER;
   const clearLeftover = usePlannerLog((s) => s.clear);
 
   const current: Block | undefined = today.find(
