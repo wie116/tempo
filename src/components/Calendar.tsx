@@ -7,7 +7,13 @@ import {
 } from '../lib/time';
 import { DayColumn } from './DayColumn';
 
-export function Calendar({ days, onOpenBlock }: { days: Date[]; onOpenBlock: (id: string) => void }) {
+export function Calendar({
+  days, onOpenBlock, onScheduleSeries,
+}: {
+  days: Date[];
+  onOpenBlock: (id: string) => void;
+  onScheduleSeries: (p: { taskId: string; day: Date; startMin: number }) => void;
+}) {
   const settings = useStore((s) => s.settings);
   const updateBlock = useStore((s) => s.updateBlock);
   const blockFromTask = useStore((s) => s.blockFromTask);
@@ -129,7 +135,15 @@ export function Calendar({ days, onOpenBlock }: { days: Date[]; onOpenBlock: (id
           // Sin arrastre no se agenda nada: un clic en el panel solo selecciona.
           if (!d.moved) { /* nada */ }
           else if (d.kind === 'break') addBreak(day, d.startMin, d.durationMin);
-          else if (d.taskId) blockFromTask(d.taskId, day, d.startMin, d.durationMin);
+          else if (d.taskId) {
+            const task = useStore.getState().tasks.find((t) => t.id === d.taskId);
+            if (task && task.repeat !== 'none') {
+              // Repite: revisamos antes de crear toda la serie, para poder avisar choques.
+              onScheduleSeries({ taskId: d.taskId, day, startMin: d.startMin });
+            } else {
+              blockFromTask(d.taskId, day, d.startMin, d.durationMin);
+            }
+          }
         } else if (d.mode === 'range') {
           // Marcamos la franja y vos elegís qué poner: bloque o pausa
           setRange({ dayKey: dateKey(day), dayIndex: d.dayIndex, startMin: d.startMin, durationMin: d.durationMin });

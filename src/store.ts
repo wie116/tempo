@@ -36,6 +36,8 @@ const DEFAULT_SETTINGS: Settings = {
     gapMin: 0,
     listIds: null,
     includeRecurring: true,
+    reassign: 'none',
+    reassignMin: 30,
   },
 };
 
@@ -164,6 +166,8 @@ interface State {
   /** "Necesité más tiempo": cierra el original y agenda la continuación. */
   extendBlock: (id: string, extraMin: number) => string | null;
   applyPlan: (day: Date, items: PlanItem[]) => void;
+  /** Crea los bloques de una serie ya resuelta (fechas puntuales, sin conflictos). */
+  scheduleSeries: (taskId: string, dates: Date[], startMin: number, durationMin: number) => void;
 }
 
 function seed() {
@@ -178,7 +182,7 @@ function seed() {
   ];
   const t = (listId: string, title: string, estimatedMin: number | null, recurring = false, order = 0): Task => ({
     id: uid(), listId, title, estimatedMin, color: null, recurring,
-    repeat: 'none', repeatUntil: null, archived: false, notes: '', order,
+    repeat: 'none', repeatUntil: null, repeatWeekdays: null, archived: false, notes: '', order,
   });
   const tasks: Task[] = [
     t(l1, 'Foco profundo', 90, false, 0),
@@ -250,7 +254,7 @@ export const useStore = create<State>()(
             ...s.tasks,
             {
               id, listId, title, color: null,
-              recurring: false, repeat: 'none', repeatUntil: null, archived: false, notes: '',
+              recurring: false, repeat: 'none', repeatUntil: null, repeatWeekdays: null, archived: false, notes: '',
               order: s.tasks.filter((t) => t.listId === listId).length,
               ...opts,
               estimatedMin:
@@ -334,7 +338,7 @@ export const useStore = create<State>()(
         // Materializamos la serie entera de una: es mucho más fácil de editar
         // y de depurar que recalcular repeticiones al vuelo.
         const seriesId = uid();
-        const dates = expandSeries(day, task.repeat, task.repeatUntil);
+        const dates = expandSeries(day, task.repeat, task.repeatUntil, task.repeatWeekdays);
         let firstId: string | null = null;
         for (const d of dates) {
           const id = get().addBlock({ ...base, startsAt: isoFor(d, startMin), seriesId });
@@ -600,6 +604,23 @@ export const useStore = create<State>()(
         });
       },
 
+      scheduleSeries: (taskId, dates, startMin, durationMin) => {
+        const s = get();
+        const task = s.tasks.find((t) => t.id === taskId);
+        if (!task || !dates.length) return;
+        const list = s.lists.find((l) => l.id === task.listId);
+        const color = task.color ?? list?.color ?? PALETTE[0];
+        const seriesId = dates.length > 1 ? uid() : null;
+        for (const d of dates) {
+          s.addBlock({
+            taskId, title: task.title, color,
+            startsAt: isoFor(d, startMin), durationMin,
+            kind: 'task', status: 'planned', closedAt: null,
+            pinned: false, seriesId, notes: '',
+          });
+        }
+      },
+
       applyPlan: (day, items) => {
         const s = get();
         for (const it of items) {
@@ -630,6 +651,7 @@ export const useStore = create<State>()(
           // El default viejo era 30; ahora arranca en 10.
           defaultBlockMin: persisted?.settings?.defaultBlockMin === 30 ? 10 : persisted?.settings?.defaultBlockMin ?? 10,
           autoplan: { ...DEFAULT_SETTINGS.autoplan, ...(persisted?.settings?.autoplan ?? {}) },
+          // settings.autoplan ya trae reassign/reassignMin por el merge de arriba
         },
       }),
       /**
@@ -740,6 +762,8 @@ export interface Toast {
   body?: string;
   blockId?: string;
   kind: 'info' | 'close-prompt';
+  /** Muestra un botón de deshacer que llama a esto. */
+  onUndo?: () => void;
   /** ms; 0 = queda hasta que la cierres. */
   ttl: number;
 }

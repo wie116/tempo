@@ -29,6 +29,8 @@ export interface Task {
   repeat: RepeatMode;
   /** yyyy-MM-dd. null = hasta el tope del horizonte. */
   repeatUntil: string | null;
+  /** Solo para 'weekly': qué días de la semana (0=domingo..6=sábado). null = el día en que se agendó. */
+  repeatWeekdays: number[] | null;
   archived: boolean;
   notes: string;
   order: number;
@@ -71,6 +73,9 @@ export interface AutoplanConfig {
   gapMin: number;
   listIds: string[] | null;
   includeRecurring: boolean;
+  /** Duración uniforme para esta tanda, sin tocar lo guardado en cada tarea. */
+  reassign: 'none' | 'manual' | 'auto';
+  reassignMin: number;
 }
 
 export interface Settings {

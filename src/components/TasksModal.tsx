@@ -3,7 +3,7 @@ import { useStore } from '../store';
 import { PALETTE } from '../lib/themes';
 import { durationLabel } from '../lib/time';
 import { Btn, ColorPicker, ConfirmModal, Field, Modal, NumField, Segmented, Tabs, inputCls } from './Modal';
-import { UNTIL_PRESETS, countSeries } from '../lib/repeat';
+import { UNTIL_PRESETS, WEEKDAY_LABELS, countSeries } from '../lib/repeat';
 import { dateKey } from '../lib/time';
 import type { RepeatMode } from '../types';
 import type { Task } from '../types';
@@ -311,7 +311,7 @@ export function TaskEditModal({
 function RepeatTab({ task }: { task: Task }) {
   const updateTask = useStore((s) => s.updateTask);
   const today = new Date();
-  const n = task.repeat === 'none' ? 0 : countSeries(today, task.repeat, task.repeatUntil);
+  const n = task.repeat === 'none' ? 0 : countSeries(today, task.repeat, task.repeatUntil, task.repeatWeekdays);
 
   return (
     <div className="space-y-4 p-5">
@@ -330,17 +330,45 @@ function RepeatTab({ task }: { task: Task }) {
         </span>
       </label>
 
-      <Field label="Repetir al agendarla" hint="Al arrastrarla a un día se crea toda la serie de una vez.">
+      <Field label="Repetir al agendarla" hint="Al arrastrarla a un día se abre una revisión antes de crear la serie.">
         <Segmented
           value={task.repeat}
           onChange={(v) => updateTask(task.id, { repeat: v as RepeatMode })}
           options={[
             { id: 'none', label: 'No' },
             { id: 'daily', label: 'Cada día' },
-            { id: 'weekly', label: 'Cada semana' },
+            { id: 'weekly', label: 'Semanal' },
           ]}
         />
       </Field>
+
+      {task.repeat === 'weekly' && (
+        <Field label="Qué días" hint="Podés elegir varios. Vacío = el mismo día en que la agendes.">
+          <div className="flex flex-wrap gap-1.5">
+            {WEEKDAY_LABELS.map((label, i) => {
+              const on = (task.repeatWeekdays ?? []).includes(i);
+              return (
+                <button
+                  key={i}
+                  onClick={() => {
+                    const cur = task.repeatWeekdays ?? [];
+                    const next = on ? cur.filter((x) => x !== i) : [...cur, i].sort();
+                    updateTask(task.id, { repeatWeekdays: next.length ? next : null });
+                  }}
+                  className="rounded-md border px-2.5 py-1.5 text-[12px]"
+                  style={{
+                    borderColor: on ? 'var(--accent)' : 'var(--border)',
+                    background: on ? 'var(--accent)' : undefined,
+                    color: on ? 'var(--accent-fg)' : 'var(--muted)',
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
+      )}
 
       {task.repeat !== 'none' && (
         <>

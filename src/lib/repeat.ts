@@ -9,7 +9,7 @@ import { dateKey } from './time';
  */
 export const MAX_OCCURRENCES: Record<Exclude<RepeatMode, 'none'>, number> = {
   daily: 180,
-  weekly: 78,
+  weekly: 180,
 };
 
 export const UNTIL_PRESETS = [
@@ -18,22 +18,33 @@ export const UNTIL_PRESETS = [
   { id: '1y', label: '1 año', add: (d: Date) => addYears(d, 1) },
 ];
 
-/** Fechas concretas de una serie que arranca en `from`. */
-export function expandSeries(from: Date, repeat: RepeatMode, until: string | null): Date[] {
+export const WEEKDAY_LABELS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
+/**
+ * Fechas concretas de una serie que arranca en `from`.
+ * 'daily' recorre todos los días. 'weekly' recorre solo los días de semana
+ * indicados en `weekdays` (por ejemplo lun/mié/vie); si no se especifica
+ * ninguno, usa el mismo día de la semana en que se agendó — el comportamiento
+ * de antes, cuando "semanal" era un solo día repetido.
+ */
+export function expandSeries(
+  from: Date, repeat: RepeatMode, until: string | null, weekdays: number[] | null = null
+): Date[] {
   if (repeat === 'none') return [from];
   const cap = MAX_OCCURRENCES[repeat];
-  const step = repeat === 'daily' ? 1 : 7;
   const limit = until ? parseISO(until) : addYears(from, 3);
+  const days = repeat === 'weekly' ? (weekdays?.length ? weekdays : [from.getDay()]) : null;
 
   const out: Date[] = [];
   let d = from;
-  while (out.length < cap && dateKey(d) <= dateKey(limit)) {
-    out.push(d);
-    d = addDays(d, step);
+  let guard = 0;
+  while (out.length < cap && dateKey(d) <= dateKey(limit) && guard++ < 3000) {
+    if (repeat === 'daily' || days!.includes(d.getDay())) out.push(d);
+    d = addDays(d, 1);
   }
   return out.length ? out : [from];
 }
 
 /** Cuántos bloques se van a crear, para avisarlo antes. */
-export const countSeries = (from: Date, repeat: RepeatMode, until: string | null) =>
-  expandSeries(from, repeat, until).length;
+export const countSeries = (from: Date, repeat: RepeatMode, until: string | null, weekdays: number[] | null = null) =>
+  expandSeries(from, repeat, until, weekdays).length;

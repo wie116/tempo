@@ -30,6 +30,7 @@ create table if not exists tasks (
   is_recurring boolean not null default false,
   repeat text not null default 'none' check (repeat in ('none','daily','weekly')),
   repeat_until date,
+  repeat_weekdays int[],
   is_archived boolean not null default false,
   notes text not null default '',
   sort_order int not null default 0,
@@ -61,6 +62,8 @@ alter table blocks drop constraint if exists blocks_status_check;
 alter table blocks add constraint blocks_status_check check (status in ('planned','done','skipped'));
 alter table tasks  add column if not exists repeat text not null default 'none';
 alter table tasks  add column if not exists repeat_until date;
+alter table tasks  add column if not exists repeat_weekdays int[];
+notify pgrst, 'reload schema';
 
 create index if not exists blocks_user_start_idx on blocks (user_id, starts_at);
 create index if not exists tasks_user_list_idx on tasks (user_id, list_id);

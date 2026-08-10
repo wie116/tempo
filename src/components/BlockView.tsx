@@ -123,152 +123,104 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, onOpen }: Props
       {live && <span className="absolute inset-x-0 top-0 h-[2px]" style={{ background: 'var(--now)' }} />}
 
       <div className={`relative h-full pl-2.5 ${tiny ? 'flex items-center gap-1.5 pr-1.5' : 'pr-2 py-1'}`}>
-        <div className={`relative z-[60] ${tiny ? 'contents' : 'flex items-start gap-1.5'}`}>
-          <p
-            className={[
-              'min-w-0 flex-1 truncate font-medium leading-tight',
-              tiny ? 'text-[11.5px]' : 'text-[14px]',
-              done ? 'line-through' : '',
-            ].join(' ')}
-          >
-            {block.title}
-          </p>
-          {tiny ? (
-            <>
-            <button
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => { e.stopPropagation(); setPinned([block.id], !block.pinned); }}
-              aria-label={block.pinned ? 'Soltar bloque' : 'Fijar bloque'}
-              title={block.pinned ? 'Fijo: no se mueve. Clic para soltarlo.' : 'Fijar en este horario'}
-              className={`grid h-5 w-5 shrink-0 place-items-center rounded-full transition-opacity ${
-                block.pinned ? 'opacity-100' : focused ? 'opacity-70' : 'opacity-0 group-hover:opacity-70'
-              }`}
-              style={
-                block.pinned
-                  ? { background: 'var(--pin)', color: '#fff' }
-                  : { color: 'var(--muted)' }
-              }
-            >
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
-                <rect x="3.4" y="7" width="9.2" height="6.2" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-                <path d={block.pinned ? 'M5.7 7V5.2a2.3 2.3 0 0 1 4.6 0V7' : 'M5.7 7V5.2a2.3 2.3 0 0 1 4.4-.8'}
-                  stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-              </svg>
-            </button>
-            <button
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => { e.stopPropagation(); removeBlock(block.id); }}
-              aria-label={`Eliminar ${block.title}`}
-              title="Eliminar bloque"
-              className={`grid h-5 w-5 shrink-0 place-items-center rounded text-muted transition-opacity hover:text-[var(--now)] ${
-                focused ? 'opacity-70' : 'opacity-0 group-hover:opacity-70'
-              }`}
-            >
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
-                <path d="M3 4.4h10M6.3 4.4V3.2h3.4v1.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-                <path d="M4.4 4.4 5 13a.9.9 0 0 0 .9.8h4.2a.9.9 0 0 0 .9-.8l.6-8.6"
-                  stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-            <button
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => { e.stopPropagation(); onOpen(block.id); }}
-              aria-label={`Editar ${block.title}`}
-              title="Editar bloque"
-              className={`grid h-5 w-5 shrink-0 place-items-center rounded text-muted transition-opacity hover:text-ink ${focused ? 'opacity-70' : 'opacity-0 group-hover:opacity-70'}`}
-            >
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
-                <path d="M11.2 2.6a1.3 1.3 0 0 1 1.9 0l.3.3a1.3 1.3 0 0 1 0 1.9L6.2 12 3.5 12.5 4 9.8l7.2-7.2Z"
-                  stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-              </svg>
-            </button>
-              <span className="tabular shrink-0 font-mono text-[10px] text-muted">{hhmm(startMin)}</span>
-            </>
-          ) : (
-            <>
-            <button
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => { e.stopPropagation(); setPinned([block.id], !block.pinned); }}
-              aria-label={block.pinned ? 'Soltar bloque' : 'Fijar bloque'}
-              title={block.pinned ? 'Fijo: no se mueve. Clic para soltarlo.' : 'Fijar en este horario'}
-              className={`grid h-5 w-5 shrink-0 place-items-center rounded-full transition-opacity ${
-                block.pinned ? 'opacity-100' : focused ? 'opacity-70' : 'opacity-0 group-hover:opacity-70'
-              }`}
-              style={
-                block.pinned
-                  ? { background: 'var(--pin)', color: '#fff' }
-                  : { color: 'var(--muted)' }
-              }
-            >
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
-                <rect x="3.4" y="7" width="9.2" height="6.2" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-                <path d={block.pinned ? 'M5.7 7V5.2a2.3 2.3 0 0 1 4.6 0V7' : 'M5.7 7V5.2a2.3 2.3 0 0 1 4.4-.8'}
-                  stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-              </svg>
-            </button>
-            <button
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => { e.stopPropagation(); removeBlock(block.id); }}
-              aria-label={`Eliminar ${block.title}`}
-              title="Eliminar bloque"
-              className={`grid h-5 w-5 shrink-0 place-items-center rounded text-muted transition-opacity hover:text-[var(--now)] ${
-                focused ? 'opacity-70' : 'opacity-0 group-hover:opacity-70'
-              }`}
-            >
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
-                <path d="M3 4.4h10M6.3 4.4V3.2h3.4v1.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-                <path d="M4.4 4.4 5 13a.9.9 0 0 0 .9.8h4.2a.9.9 0 0 0 .9-.8l.6-8.6"
-                  stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-            <button
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => { e.stopPropagation(); onOpen(block.id); }}
-              aria-label={`Editar ${block.title}`}
-              title="Editar bloque"
-              className={`grid h-5 w-5 shrink-0 place-items-center rounded text-muted transition-opacity hover:text-ink ${focused ? 'opacity-70' : 'opacity-0 group-hover:opacity-70'}`}
-            >
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
-                <path d="M11.2 2.6a1.3 1.3 0 0 1 1.9 0l.3.3a1.3 1.3 0 0 1 0 1.9L6.2 12 3.5 12.5 4 9.8l7.2-7.2Z"
-                  stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-              </svg>
-            </button>
-            <button
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                setStatus(block.id, done ? 'skipped' : skipped ? 'planned' : 'done');
-              }}
-              aria-label={done ? 'Marcar como omitido' : skipped ? 'Marcar como pendiente' : 'Marcar como hecho'}
-              title={done ? 'Hecho — clic para omitir' : skipped ? 'Omitido — clic para volver a pendiente' : 'Marcar como hecho'}
-              className="mt-px grid h-5 w-5 shrink-0 place-items-center rounded-full border transition-colors"
-              style={{
-                borderColor: done
-                  ? block.color
-                  : skipped
-                  ? 'var(--muted)'
-                  : overdue
-                  ? 'var(--now)'
-                  : 'color-mix(in oklab, var(--muted) 45%, transparent)',
-                background: done ? block.color : 'transparent',
-              }}
-            >
-              {skipped && <span className="h-[1.5px] w-2.5 rounded-full bg-current opacity-70" />}
-              {done && (
-                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
-                  <path d="M2.5 6.4 4.8 8.7 9.5 3.6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              )}
-            </button>
-            </>
-          )}
-        </div>
+        <p
+          className={[
+            'min-w-0 flex-1 truncate pr-1 font-medium leading-tight',
+            tiny ? 'text-[11.5px]' : 'text-[14px]',
+            done ? 'line-through' : '',
+          ].join(' ')}
+        >
+          {block.title}
+        </p>
+        {tiny && (
+          <span className="tabular shrink-0 pr-5 font-mono text-[10px] text-muted">{hhmm(startMin)}</span>
+        )}
         {!compact && (
-          <p className="tabular mt-0.5 font-mono text-[11px] text-muted">
+          <p className="tabular mt-0.5 pr-8 font-mono text-[11px] text-muted">
             {hhmm(startMin)}–{hhmm(startMin + durationMin)}
             {overdue && <span style={{ color: 'var(--now)' }}> · sin cerrar</span>}
           </p>
         )}
+      </div>
+
+      {/* Estado: siempre visible, no le resta ancho al título porque flota. */}
+      <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          setStatus(block.id, done ? 'skipped' : skipped ? 'planned' : 'done');
+        }}
+        aria-label={done ? 'Marcar como omitido' : skipped ? 'Marcar como pendiente' : 'Marcar como hecho'}
+        title={done ? 'Hecho — clic para omitir' : skipped ? 'Omitido — clic para volver a pendiente' : 'Marcar como hecho'}
+        className="absolute right-1 top-1 z-[55] grid h-5 w-5 shrink-0 place-items-center rounded-full border transition-colors"
+        style={{
+          borderColor: done
+            ? block.color
+            : skipped
+            ? 'var(--muted)'
+            : overdue
+            ? 'var(--now)'
+            : 'color-mix(in oklab, var(--muted) 45%, transparent)',
+          background: done
+            ? block.color
+            : 'color-mix(in oklab, var(--surface) 75%, transparent)',
+        }}
+      >
+        {skipped && <span className="h-[1.5px] w-2.5 rounded-full bg-current opacity-70" />}
+        {done && (
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden>
+            <path d="M2.5 6.4 4.8 8.7 9.5 3.6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </button>
+
+      {/* Candado, tachito y lápiz: flotan encima, solo al pasar el mouse o si está enfocado. */}
+      <div
+        className={[
+          'absolute right-1 top-7 z-[55] flex items-center gap-1 rounded-lg p-0.5 backdrop-blur-sm transition-opacity',
+          focused ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100',
+        ].join(' ')}
+        style={{ background: 'color-mix(in oklab, var(--surface) 88%, transparent)', boxShadow: '0 1px 3px rgb(0 0 0 / .12)' }}
+      >
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); setPinned([block.id], !block.pinned); }}
+          aria-label={block.pinned ? 'Soltar bloque' : 'Fijar bloque'}
+          title={block.pinned ? 'Fijo: no se mueve. Clic para soltarlo.' : 'Fijar en este horario'}
+          className="grid h-5 w-5 shrink-0 place-items-center rounded-full"
+          style={block.pinned ? { background: 'var(--pin)', color: '#fff' } : { color: 'var(--muted)' }}
+        >
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <rect x="3.4" y="7" width="9.2" height="6.2" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+            <path d={block.pinned ? 'M5.7 7V5.2a2.3 2.3 0 0 1 4.6 0V7' : 'M5.7 7V5.2a2.3 2.3 0 0 1 4.4-.8'}
+              stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+          </svg>
+        </button>
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); removeBlock(block.id); }}
+          aria-label={`Eliminar ${block.title}`}
+          title="Eliminar bloque"
+          className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted hover:text-[var(--now)]"
+        >
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path d="M3 4.4h10M6.3 4.4V3.2h3.4v1.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+            <path d="M4.4 4.4 5 13a.9.9 0 0 0 .9.8h4.2a.9.9 0 0 0 .9-.8l.6-8.6"
+              stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onOpen(block.id); }}
+          aria-label={`Editar ${block.title}`}
+          title="Editar bloque"
+          className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted hover:text-ink"
+        >
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path d="M11.2 2.6a1.3 1.3 0 0 1 1.9 0l.3.3a1.3 1.3 0 0 1 0 1.9L6.2 12 3.5 12.5 4 9.8l7.2-7.2Z"
+              stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+          </svg>
+        </button>
       </div>
 
       {/* Tirador de arriba: agranda el bloque hacia atrás empujando lo de encima */}

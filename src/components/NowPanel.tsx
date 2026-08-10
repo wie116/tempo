@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import type { Block } from '../types';
 import { useClock, useStore } from '../store';
 import { dateKey, durationLabel, hhmm, minutesOf } from '../lib/time';
+import { usePlannerLog } from '../lib/plannerLog';
 
 const pad = (n: number) => String(Math.floor(n)).padStart(2, '0');
 
@@ -31,6 +32,13 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
         .sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
     [blocks, todayKey]
   );
+
+  const todaySkipped = useMemo(
+    () => today.filter((b) => b.status === 'skipped' && b.kind !== 'break'),
+    [today]
+  );
+  const leftover = usePlannerLog((s) => (s.dayKey === todayKey ? s.leftover : []));
+  const clearLeftover = usePlannerLog((s) => s.clear);
 
   const current: Block | undefined = today.find(
     (b) => nowMin >= minutesOf(b.startsAt) && nowMin < minutesOf(b.startsAt) + b.durationMin
@@ -207,6 +215,51 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
             <p className="mt-1 text-[15px] leading-snug text-muted">
               {today.length === 0 ? 'El día está sin planificar.' : 'Estás en un hueco libre.'}
             </p>
+          </div>
+        )}
+
+        {(leftover.length > 0 || todaySkipped.length > 0) && (
+          <div className="mt-5 border-t border-line pt-3.5">
+            {leftover.length > 0 && (
+              <div className="mb-3">
+                <div className="mb-1 flex items-center justify-between">
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-muted">Sin agendar hoy</p>
+                  <button onClick={clearLeftover} className="text-[10.5px] text-muted hover:text-ink">
+                    Ocultar
+                  </button>
+                </div>
+                <ul className="space-y-1">
+                  {leftover.map((l, i) => (
+                    <li key={i} className="flex items-baseline gap-2 text-[12px]">
+                      <span className="min-w-0 flex-1 truncate">{l.title}</span>
+                      <span className="tabular shrink-0 font-mono text-[10px] text-muted">
+                        {durationLabel(l.durationMin)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-[10.5px] leading-snug text-muted">
+                  No entraron al planificar. Siguen pendientes en su grupo.
+                </p>
+              </div>
+            )}
+            {todaySkipped.length > 0 && (
+              <div>
+                <p className="mb-1 text-[11px] uppercase tracking-[0.12em] text-muted">Omitidas hoy</p>
+                <ul className="space-y-1">
+                  {todaySkipped.map((b) => (
+                    <li key={b.id}>
+                      <button
+                        onClick={() => onOpenBlock(b.id)}
+                        className="block w-full truncate text-left text-[12px] text-muted hover:text-ink"
+                      >
+                        {b.title}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
 

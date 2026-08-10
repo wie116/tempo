@@ -26,7 +26,7 @@ Abrí http://localhost:5173
 | Mover el día entero | Activá el candado de la barra y arrastrá: los siguientes lo acompañan |
 | Clavar un bloque | El candadito dentro del bloque: queda fijo y corta la cadena |
 | Cambiar la duración | Estirá desde el borde de abajo o el de arriba (snap de 10 min) |
-| Repetir una tarea | Panel de tarea → pestaña *Repetición*: diaria o semanal, con fecha de fin |
+| Repetir una tarea | Panel de tarea → pestaña *Repetición*: diaria, o semanal eligiendo qué días |
 | Insertar una pausa | Marcá una franja vacía y elegí *Pausa* |
 | Marcar como hecho | Click en el círculo del bloque |
 | Administrar tareas | Botón *Tareas* o `L` |
@@ -46,8 +46,11 @@ Atajos: `Ctrl+Z` deshace, `Ctrl+Shift+Z` rehace, `Supr` (o `Retroceso`), que bor
 - **Autoplan** acomoda tus pendientes en los huecos libres sin mover nada de lo que ya agendaste. La **varita** respeta el orden de tus listas; el **dado** lo mezcla. Es el mismo motor: misma configuración, mismo aviso de qué quedó afuera y por qué.
 - **Un clic en el panel de tareas no agenda nada.** Solo selecciona; para llevarla al día hay que arrastrarla hasta la grilla.
 - **Estirar hacia arriba empuja lo de encima**, en cascada, sin superponer ni borrar. Si topa contra un bloque fijo o contra el inicio de la jornada, cede el que estás estirando.
+- **La repetición elige días específicos.** Semanal ya no es "un día repetido": marcás lunes, miércoles y viernes y listo. Al arrastrar una tarea que repite, antes de crear la serie se abre una revisión que muestra cada fecha y **bloquea la confirmación si algo se pisa** con lo que ya está agendado — no empuja ni reemplaza nada, hay que resolver el choque a mano.
+- **Reasignar tiempo**, en Dado y Varita por igual: podés pisar la duración de toda la tanda seleccionada, solo para esta vez, sin tocar lo guardado en cada tarea. *Manual* le da a todas la misma duración que elijas y avisa si no entran todas. *Automático* calcula la duración más grande posible para que entren todas — probando de a 10 minutos con el mismo motor de colocación real, así funciona incluso con huecos partidos por reuniones en el medio.
+- **La varita avisa qué quedó afuera**, con un botón para deshacer todo de un clic. Lo que no entró se lista también en el panel derecho, junto con lo que marcaste como omitido ese día.
 - **Todo bloque tiene una tarea detrás.** Los que creás a mano en la grilla aparecen en el panel bajo **Sin clasificar**, así podés renombrarlos, darles color o volverlos recurrentes sin buscarlos en el calendario.
-- **La varita tiene dos modos.** *Bloques del día* reacomoda lo que ya agendaste, dejando fijas las pausas, lo completado y lo que ya arrancó; lo que no entra vuelve al panel como pendiente. *Tareas pendientes* sale a buscar trabajo nuevo y solo rellena huecos.
+- **La varita tiene dos modos.** *Bloques del día* reacomoda lo que ya agendaste — pausas incluidas, se corren con el resto —, dejando fijos solo lo completado y lo que clavaste con el candadito; lo que no entra vuelve al panel como pendiente. *Tareas pendientes* sale a buscar trabajo nuevo y solo rellena huecos.
 - **Las tareas recurrentes (↻) no se gastan**: siguen disponibles al agendarlas y al completarlas.
 
 ## Cómo está armado

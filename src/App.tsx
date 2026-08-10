@@ -20,6 +20,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { TaskEditModal, TasksModal } from './components/TasksModal';
 import { BlockModal } from './components/BlockModal';
 import { AutoplanModal } from './components/AutoplanModal';
+import { SeriesScheduleModal } from './components/SeriesScheduleModal';
 import { TodayModal } from './components/TodayModal';
 
 /** La vista de día no necesita todo el ancho: una columna estirada se lee peor. */
@@ -53,6 +54,7 @@ export default function App() {
   const [blockId, setBlockId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [autoplan, setAutoplan] = useState<'wand' | 'dice' | null>(null);
+  const [seriesPrompt, setSeriesPrompt] = useState<{ taskId: string; day: Date; startMin: number } | null>(null);
 
   const anchor = parseISO(cursor);
   const days = view === 'day' ? [anchor] : weekDays(anchor, mondayFirst);
@@ -152,7 +154,7 @@ export default function App() {
             ) : (
               <>
                 <Toolbar onAutoplan={setAutoplan} />
-                <Calendar days={days} onOpenBlock={setBlockId} />
+                <Calendar days={days} onOpenBlock={setBlockId} onScheduleSeries={setSeriesPrompt} />
               </>
             )}
           </div>
@@ -176,6 +178,14 @@ export default function App() {
       <TaskEditModal id={taskId} onClose={() => setTaskId(null)} />
       {autoplan && (
         <AutoplanModal open onClose={() => setAutoplan(null)} preset={autoplan} />
+      )}
+      {seriesPrompt && (
+        <SeriesScheduleModal
+          taskId={seriesPrompt.taskId}
+          initialDay={seriesPrompt.day}
+          initialStartMin={seriesPrompt.startMin}
+          onClose={() => setSeriesPrompt(null)}
+        />
       )}
     </div>
   );

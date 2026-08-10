@@ -33,13 +33,14 @@ const rowToList = (r: any): List => ({
 const taskToRow = (t: Task, userId: string) => ({
   id: t.id, user_id: userId, list_id: t.listId, title: t.title,
   estimated_min: t.estimatedMin, color: t.color, is_recurring: t.recurring,
-  repeat: t.repeat, repeat_until: t.repeatUntil,
+  repeat: t.repeat, repeat_until: t.repeatUntil, repeat_weekdays: t.repeatWeekdays,
   is_archived: t.archived, notes: t.notes ?? '', sort_order: t.order,
 });
 const rowToTask = (r: any): Task => ({
   id: r.id, listId: r.list_id, title: r.title,
   estimatedMin: r.estimated_min ?? null, color: r.color ?? null,
   recurring: !!r.is_recurring, repeat: r.repeat ?? 'none', repeatUntil: r.repeat_until ?? null,
+  repeatWeekdays: r.repeat_weekdays ?? null,
   archived: !!r.is_archived, notes: r.notes ?? '', order: r.sort_order ?? 0,
 });
 

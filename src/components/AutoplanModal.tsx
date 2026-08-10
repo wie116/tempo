@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react';
 import { parseISO } from 'date-fns';
 import { useStore } from '../store';
-import { autoplan, candidatesFromDay, candidatesFromTasks } from '../lib/autoplan';
+import { autoplan, candidatesFromDay, candidatesFromTasks, findGaps } from '../lib/autoplan';
+import { undo } from '../lib/history';
 import type { PlanCandidate } from '../lib/autoplan';
-import type { PlanOrder, PlanSource } from '../types';
+import type { AutoplanConfig, PlanOrder, PlanSource } from '../types';
 import { dateKey, durationLabel, fmt, hhmm, snap } from '../lib/time';
+import { usePlannerLog } from '../lib/plannerLog';
+import { useToasts } from '../store';
 import { Btn, Field, Modal, NumField, Segmented } from './Modal';
 
 const ORDERS: { id: PlanOrder; label: string }[] = [
@@ -67,21 +70,54 @@ export function AutoplanModal({
     };
   }, [cfg, dayBlocks, fromMin, tasks, lists, scheduled]);
 
+  /**
+   * "Reasignar tiempo": para esta tanda nada más, sin tocar lo guardado en
+   * cada tarea. Manual pisa la duración de todos por la que elijas. Automático
+   * prueba duraciones de a 10 minutos, de mayor a menor, usando el mismo motor
+   * de colocación real (respeta huecos partidos y el aire entre bloques tal
+   * cual), hasta encontrar la más grande donde entran todas.
+   */
+  const reassignedCandidates = useMemo(() => {
+    if (cfg.reassign === 'manual') {
+      const d = Math.max(10, snap(cfg.reassignMin));
+      return candidates.map((c) => ({ ...c, durationMin: d }));
+    }
+    if (cfg.reassign === 'auto' && candidates.length > 0) {
+      const gaps = findGaps(obstacles, fromMin, cfg.untilMin);
+      const freeMin = gaps.reduce((n, g) => n + (g.end - g.start), 0);
+      const usable = Math.max(0, freeMin - cfg.gapMin * Math.max(0, candidates.length - 1));
+      const start = Math.max(10, Math.floor(usable / candidates.length / 10) * 10);
+      for (let d = start; d >= 10; d -= 10) {
+        const test = candidates.map((c) => ({ ...c, durationMin: d }));
+        if (autoplan(test, obstacles, cfg, fromMin, seed).leftover.length === 0) return test;
+      }
+      return candidates.map((c) => ({ ...c, durationMin: 10 })); // ni al mínimo entran todas
+    }
+    return candidates;
+  }, [candidates, obstacles, cfg.reassign, cfg.reassignMin, cfg.gapMin, cfg.untilMin, fromMin, seed]);
+
+  const autoFitMin = cfg.reassign === 'auto' ? reassignedCandidates[0]?.durationMin ?? null : null;
+
   const result = useMemo(
-    () => autoplan(candidates, obstacles, cfg, fromMin, seed),
-    [candidates, obstacles, cfg, fromMin, seed]
+    () => autoplan(reassignedCandidates, obstacles, cfg, fromMin, seed),
+    [reassignedCandidates, obstacles, cfg, fromMin, seed]
   );
 
   const keep = result.placed.filter((p) => !dropped.includes(p.key));
   const droppedItems = result.placed.filter((p) => dropped.includes(p.key));
 
   const apply = () => {
+    const todayKey = dateKey(new Date());
+    const isTodayView = cursor === todayKey;
+    const leftoverAll = [...result.leftover, ...droppedItems].map((p) => ({
+      title: p.title, durationMin: p.durationMin, reason: 'reason' in p ? p.reason : 'la sacaste vos',
+    }));
+
     if (cfg.source === 'today') {
       applyReorder(
         day,
         keep.filter((p) => p.blockId).map((p) => ({ blockId: p.blockId!, startMin: p.startMin }))
       );
-      // Lo que no entró vuelve al panel de tareas en vez de quedar escondido.
       const out = [...result.leftover, ...droppedItems]
         .map((p) => p.blockId)
         .filter((x): x is string => Boolean(x));
@@ -92,6 +128,20 @@ export function AutoplanModal({
         keep.filter((p) => p.taskId)
       );
     }
+
+    // Si algo quedó afuera de hoy, dejamos rastro visible y avisamos con opción de deshacer.
+    if (isTodayView) usePlannerLog.getState().set(todayKey, leftoverAll);
+    const kind = preset === 'dice' ? 'El dado' : 'La varita';
+    useToasts.getState().push({
+      kind: 'info',
+      title: leftoverAll.length
+        ? `${kind}: agendó ${keep.length}, ${leftoverAll.length} no entraron`
+        : `${kind} agendó ${keep.length} sin problemas`,
+      body: leftoverAll.length ? 'Quedaron listadas en Tareas y en el panel de la derecha.' : undefined,
+      ttl: leftoverAll.length ? 0 : 6000,
+      onUndo: undo,
+    });
+
     setDropped([]);
     onClose();
   };
@@ -150,46 +200,44 @@ export function AutoplanModal({
           </div>
         </Field>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Empezar">
-            <Segmented
-              value={cfg.from}
-              onChange={(v) => setCfg({ from: v })}
-              options={[
-                { id: 'now' as const, label: 'Ahora' },
-                { id: 'dayStart' as const, label: 'Inicio' },
-                { id: 'custom' as const, label: 'Hora' },
-              ]}
-            />
-            {cfg.from === 'custom' && (
-              <div className="mt-2">
-                <input
-                  type="time"
-                  step={600}
-                  value={hhmm(cfg.customFromMin)}
-                  onChange={(e) => {
-                    const [h, m] = e.target.value.split(':').map(Number);
-                    if (!Number.isNaN(h)) setCfg({ customFromMin: snap(h * 60 + m) });
-                  }}
-                  className="rounded-lg border border-line bg-surface-2 px-2 py-1.5 font-mono text-[13px] outline-none"
-                />
-              </div>
-            )}
-          </Field>
+        <Field label="Empezar">
+          <Segmented
+            value={cfg.from}
+            onChange={(v) => setCfg({ from: v })}
+            options={[
+              { id: 'now' as const, label: 'Ahora' },
+              { id: 'dayStart' as const, label: 'Inicio de jornada' },
+              { id: 'custom' as const, label: 'Hora puntual' },
+            ]}
+          />
+          {cfg.from === 'custom' && (
+            <div className="mt-2">
+              <input
+                type="time"
+                step={600}
+                value={hhmm(cfg.customFromMin)}
+                onChange={(e) => {
+                  const [h, m] = e.target.value.split(':').map(Number);
+                  if (!Number.isNaN(h)) setCfg({ customFromMin: snap(h * 60 + m) });
+                }}
+                className="rounded-lg border border-line bg-surface-2 px-2 py-1.5 font-mono text-[13px] outline-none"
+              />
+            </div>
+          )}
+          {cfg.from === 'dayStart' && (
+            <p className="mt-1 text-[11px] leading-snug text-muted">
+              Útil para planificar un día que no es hoy: arranca al inicio de tu jornada en vez de "ahora".
+            </p>
+          )}
+        </Field>
 
-          <Field label="Terminar antes de">
-            <input
-              type="time"
-              step={600}
-              value={hhmm(cfg.untilMin)}
-              onChange={(e) => {
-                const [h, m] = e.target.value.split(':').map(Number);
-                if (!Number.isNaN(h)) setCfg({ untilMin: snap(h * 60 + m) });
-              }}
-              className="rounded-lg border border-line bg-surface-2 px-2 py-1.5 font-mono text-[13px] outline-none"
-            />
-          </Field>
-        </div>
+        <ReassignTimeField
+          cfg={cfg}
+          setCfg={setCfg}
+          candidateCount={candidates.length}
+          placedCount={result.placed.length}
+          autoFitMin={autoFitMin}
+        />
 
         {preset !== 'dice' && (
           <Field label="Orden">
@@ -358,5 +406,80 @@ function Leftovers({
           : 'Siguen pendientes en su grupo. Podés correr la hora de fin o dejarlas para mañana.'}
       </p>
     </div>
+  );
+}
+
+
+/** La sección de "reasignar tiempo": mueve acá "Terminar antes de" y agrega Manual/Automático. */
+function ReassignTimeField({
+  cfg, setCfg, candidateCount, placedCount, autoFitMin,
+}: {
+  cfg: AutoplanConfig;
+  setCfg: (patch: Partial<AutoplanConfig>) => void;
+  candidateCount: number;
+  placedCount: number;
+  autoFitMin: number | null;
+}) {
+  return (
+    <Field
+      label="Reasignar tiempo"
+      hint="Cambia la duración solo para esta tanda; no toca lo guardado en cada tarea."
+    >
+      <div className="space-y-2.5 rounded-lg border border-line p-3">
+        <div className="flex items-center gap-2.5">
+          <span className="w-28 shrink-0 text-[12.5px] text-muted">Terminar antes de</span>
+          <input
+            type="time"
+            step={600}
+            value={hhmm(cfg.untilMin)}
+            onChange={(e) => {
+              const [h, m] = e.target.value.split(':').map(Number);
+              if (!Number.isNaN(h)) setCfg({ untilMin: snap(h * 60 + m) });
+            }}
+            className="rounded-lg border border-line bg-surface-2 px-2 py-1.5 font-mono text-[13px] outline-none"
+          />
+        </div>
+
+        <Segmented
+          value={cfg.reassign}
+          onChange={(v) => setCfg({ reassign: v })}
+          options={[
+            { id: 'none', label: 'Como estaba' },
+            { id: 'manual', label: 'Manual' },
+            { id: 'auto', label: 'Automático' },
+          ]}
+        />
+
+        {cfg.reassign === 'manual' && (
+          <div className="flex items-center gap-2">
+            <NumField value={cfg.reassignMin} onCommit={(v) => setCfg({ reassignMin: v ?? 30 })} suffix="min cada una" />
+          </div>
+        )}
+
+        {cfg.reassign === 'manual' && candidateCount > 0 && (
+          <p className="text-[11.5px] leading-snug text-muted">
+            {placedCount >= candidateCount
+              ? `Entran las ${candidateCount} tareas seleccionadas.`
+              : `Con ${cfg.reassignMin} min cada una entran ${placedCount} de ${candidateCount}. Achicá la duración o el rango si querés que entren todas.`}
+          </p>
+        )}
+
+        {cfg.reassign === 'auto' && candidateCount > 0 && (
+          <p className="text-[11.5px] leading-snug text-muted">
+            {autoFitMin && placedCount >= candidateCount ? (
+              <>Le va a tocar <span className="font-semibold text-ink">{autoFitMin} min</span> a cada una de las {candidateCount}, para que entren todas.</>
+            ) : (
+              <>Ni con 10 min cada una entran las {candidateCount}: van a quedar {candidateCount - placedCount} afuera.</>
+            )}
+          </p>
+        )}
+
+        {cfg.reassign === 'none' && (
+          <p className="text-[11.5px] leading-snug text-muted">
+            Cada tarea conserva su duración de siempre (o la de por defecto, si no tiene una fija).
+          </p>
+        )}
+      </div>
+    </Field>
   );
 }

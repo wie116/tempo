@@ -52,6 +52,24 @@ function ToastCard({ id }: { id: string }) {
         </button>
       </div>
 
+      {toast.onUndo && (
+        <div className="mt-2 flex gap-1.5">
+          <button
+            onClick={() => { toast.onUndo!(); dismiss(toast.id); }}
+            className="flex-1 rounded-lg border border-line py-1.5 text-[12px] font-medium text-muted hover:text-ink"
+          >
+            Deshacer
+          </button>
+          <button
+            onClick={() => dismiss(toast.id)}
+            className="flex-1 rounded-lg px-2 py-1.5 text-[12px] font-semibold"
+            style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
+          >
+            Aceptar
+          </button>
+        </div>
+      )}
+
       {isPrompt && toast.blockId && (
         <div className="mt-2.5">
           {extending ? (
