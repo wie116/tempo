@@ -4,6 +4,8 @@ import { useStore, useUI } from './store';
 import { dateKey, weekDays, zoomStep } from './lib/time';
 import { unlockAudio } from './lib/audio';
 import { useClockEngine } from './hooks/useClockEngine';
+import { useAuth } from './hooks/useAuth';
+import { AuthScreen } from './components/AuthScreen';
 import { TopBar } from './components/TopBar';
 import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
@@ -36,6 +38,7 @@ function typingNow(target: EventTarget | null): boolean {
 }
 
 export default function App() {
+  const { session, ready, cloudEnabled } = useAuth();
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
   const cursor = useStore((s) => s.cursor);
@@ -114,6 +117,16 @@ export default function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [setView, setCursor, setTool, clearSelection, setZoom, slotPx]);
+
+  if (!ready) {
+    return (
+      <div className="grid h-full place-items-center bg-bg text-[13px] text-muted">
+        Abriendo tu agenda…
+      </div>
+    );
+  }
+
+  if (cloudEnabled && !session) return <AuthScreen />;
 
   return (
     <div className="flex h-full flex-col bg-bg text-ink">

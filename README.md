@@ -95,10 +95,23 @@ Un theme es un bloque de variables en `src/index.css` más una entrada en `src/l
 
 Railway no hace falta mientras el backend sea Supabase.
 
+## Cuentas y sincronización
+
+Sin configurar nada, Tempo guarda todo en el navegador. Para tener cuenta y sincronizar entre dispositivos:
+
+1. Creá un proyecto en [supabase.com](https://supabase.com).
+2. En **SQL Editor**, pegá y ejecutá `supabase/schema.sql`.
+3. En **Project Settings → API**, copiá la *Project URL* y la *anon public key*.
+4. Copiá `.env.example` como `.env` y completá las dos variables.
+5. Para la versión publicada, cargá las mismas dos en **Settings → Secrets and variables → Actions** del repo, con los nombres `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`.
+
+La clave *anon* es pública por diseño: lo que protege los datos son las políticas RLS del esquema, que solo dejan a cada usuario ver sus propias filas.
+
+La primera vez que entrás con una cuenta nueva, lo que tengas guardado en el navegador se sube solo.
+
 ## Qué sigue
 
 - **Fase 2** — pulir el arrastre: long-press en móvil, arrastrar entre bloques, deshacer.
 - **Fase 3** — registro de sesiones y estadísticas de tiempo planificado vs. real.
-- **Fase 4** — Supabase: cuentas, sincronización entre dispositivos, cola de escritura optimista. El esquema está en `supabase/schema.sql`.
 - **Fase 5** — tareas recurrentes con series, plantillas de semana.
 - **Fase 6** — PWA instalable, notificaciones, modo equipo.

@@ -1,5 +1,6 @@
 import { addDays, addMonths, parseISO } from 'date-fns';
 import { useStore } from '../store';
+import { SyncBadge } from './SyncBadge';
 import { dateKey, fmt } from '../lib/time';
 import type { ViewMode } from '../types';
 
@@ -101,6 +102,8 @@ export function TopBar({
       >
         Tareas
       </button>
+
+      <SyncBadge />
 
       <button
         onClick={onOpenSettings}

@@ -133,3 +133,8 @@ body {
     transition-duration: .01ms !important;
   }
 }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .35; }
+}
