@@ -77,24 +77,36 @@ export function AutoplanModal({
    * de colocación real (respeta huecos partidos y el aire entre bloques tal
    * cual), hasta encontrar la más grande donde entran todas.
    */
+  // Lo que sacaste a mano queda totalmente afuera del cálculo, no solo de
+  // la aplicación final: así el tiempo que le tocaba se reparte entre las
+  // que quedan, en vez de perderse.
+  const activeCandidates = useMemo(
+    () => candidates.filter((c) => !dropped.includes(c.key)),
+    [candidates, dropped]
+  );
+  const excludedCandidates = useMemo(
+    () => candidates.filter((c) => dropped.includes(c.key)),
+    [candidates, dropped]
+  );
+
   const reassignedCandidates = useMemo(() => {
     if (cfg.reassign === 'manual') {
       const d = Math.max(10, snap(cfg.reassignMin));
-      return candidates.map((c) => ({ ...c, durationMin: d }));
+      return activeCandidates.map((c) => ({ ...c, durationMin: d }));
     }
-    if (cfg.reassign === 'auto' && candidates.length > 0) {
+    if (cfg.reassign === 'auto' && activeCandidates.length > 0) {
       const gaps = findGaps(obstacles, fromMin, cfg.untilMin);
       const freeMin = gaps.reduce((n, g) => n + (g.end - g.start), 0);
-      const usable = Math.max(0, freeMin - cfg.gapMin * Math.max(0, candidates.length - 1));
-      const start = Math.max(10, Math.floor(usable / candidates.length / 10) * 10);
+      const usable = Math.max(0, freeMin - cfg.gapMin * Math.max(0, activeCandidates.length - 1));
+      const start = Math.max(10, Math.floor(usable / activeCandidates.length / 10) * 10);
       for (let d = start; d >= 10; d -= 10) {
-        const test = candidates.map((c) => ({ ...c, durationMin: d }));
+        const test = activeCandidates.map((c) => ({ ...c, durationMin: d }));
         if (autoplan(test, obstacles, cfg, fromMin, seed).leftover.length === 0) return test;
       }
-      return candidates.map((c) => ({ ...c, durationMin: 10 })); // ni al mínimo entran todas
+      return activeCandidates.map((c) => ({ ...c, durationMin: 10 })); // ni al mínimo entran todas
     }
-    return candidates;
-  }, [candidates, obstacles, cfg.reassign, cfg.reassignMin, cfg.gapMin, cfg.untilMin, fromMin, seed]);
+    return activeCandidates;
+  }, [activeCandidates, obstacles, cfg.reassign, cfg.reassignMin, cfg.gapMin, cfg.untilMin, fromMin, seed]);
 
   const autoFitMin = cfg.reassign === 'auto' ? reassignedCandidates[0]?.durationMin ?? null : null;
 
@@ -103,22 +115,23 @@ export function AutoplanModal({
     [reassignedCandidates, obstacles, cfg, fromMin, seed]
   );
 
-  const keep = result.placed.filter((p) => !dropped.includes(p.key));
-  const droppedItems = result.placed.filter((p) => dropped.includes(p.key));
+  // Ya no hay que filtrar dropped acá: activeCandidates se encargó antes.
+  const keep = result.placed;
 
   const apply = () => {
     const todayKey = dateKey(new Date());
     const isTodayView = cursor === todayKey;
-    const leftoverAll = [...result.leftover, ...droppedItems].map((p) => ({
-      title: p.title, durationMin: p.durationMin, reason: 'reason' in p ? p.reason : 'la sacaste vos',
-    }));
+    const leftoverAll = [
+      ...result.leftover.map((p) => ({ title: p.title, durationMin: p.durationMin, reason: p.reason })),
+      ...excludedCandidates.map((p) => ({ title: p.title, durationMin: p.durationMin, reason: 'la sacaste vos' })),
+    ];
 
     if (cfg.source === 'today') {
       applyReorder(
         day,
         keep.filter((p) => p.blockId).map((p) => ({ blockId: p.blockId!, startMin: p.startMin }))
       );
-      const out = [...result.leftover, ...droppedItems]
+      const out = [...result.leftover, ...excludedCandidates]
         .map((p) => p.blockId)
         .filter((x): x is string => Boolean(x));
       if (out.length) unscheduleBlocks(out);
@@ -130,7 +143,10 @@ export function AutoplanModal({
     }
 
     // Si algo quedó afuera de hoy, dejamos rastro visible y avisamos con opción de deshacer.
-    if (isTodayView) usePlannerLog.getState().set(todayKey, leftoverAll);
+    // "Sin agendar hoy" es para lo que YA estaba en la agenda de hoy y se cayó
+    // al reordenar. Una tarea pendiente que no entró en esta tanda nunca estuvo
+    // en la agenda: ya tiene su lugar, que es seguir en el panel de Tareas.
+    if (isTodayView && cfg.source === 'today') usePlannerLog.getState().set(todayKey, leftoverAll);
     const kind = preset === 'dice' ? 'El dado' : 'La varita';
     useToasts.getState().push({
       kind: 'info',
@@ -337,43 +353,42 @@ export function AutoplanModal({
           </p>
         ) : (
           <ul className="space-y-1">
-            {result.placed.map((p) => {
-              const off = dropped.includes(p.key);
-              return (
-                <li
-                  key={p.key}
-                  className="flex items-center gap-2.5 rounded-lg border border-line px-2.5 py-1.5"
-                  style={{ opacity: off ? 0.4 : 1 }}
+            {result.placed.map((p) => (
+              <li key={p.key} className="flex items-center gap-2.5 rounded-lg border border-line px-2.5 py-1.5">
+                <span className="tabular w-12 shrink-0 font-mono text-[11px] text-muted">{hhmm(p.startMin)}</span>
+                <span className="h-4 w-[3px] shrink-0 rounded-full" style={{ background: p.color }} />
+                <span className="min-w-0 flex-1 truncate text-[12.5px]">{p.title}</span>
+                <span className="tabular shrink-0 font-mono text-[10.5px] text-muted">
+                  {durationLabel(p.durationMin)}
+                </span>
+                <button
+                  onClick={() => setDropped((d) => [...d, p.key])}
+                  className="shrink-0 rounded px-1.5 text-[11px] text-muted hover:text-ink"
                 >
-                  <span className="tabular w-12 shrink-0 font-mono text-[11px] text-muted">{hhmm(p.startMin)}</span>
-                  <span className="h-4 w-[3px] shrink-0 rounded-full" style={{ background: p.color }} />
-                  <span className={`min-w-0 flex-1 truncate text-[12.5px] ${off ? 'line-through' : ''}`}>{p.title}</span>
-                  <span className="tabular shrink-0 font-mono text-[10.5px] text-muted">
-                    {durationLabel(p.durationMin)}
-                  </span>
-                  <button
-                    onClick={() => setDropped((d) => (off ? d.filter((x) => x !== p.key) : [...d, p.key]))}
-                    className="shrink-0 rounded px-1.5 text-[11px] text-muted hover:text-ink"
-                  >
-                    {off ? 'Incluir' : 'Sacar'}
-                  </button>
-                </li>
-              );
-            })}
+                  Sacar
+                </button>
+              </li>
+            ))}
           </ul>
         )}
 
-        <Leftovers items={result.leftover} dropped={droppedItems} reordering={reordering} />
+        <Leftovers
+          items={result.leftover}
+          dropped={excludedCandidates}
+          onInclude={(key) => setDropped((d) => d.filter((x) => x !== key))}
+          reordering={reordering}
+        />
       </div>
     </Modal>
   );
 }
 
 function Leftovers({
-  items, dropped, reordering,
+  items, dropped, onInclude, reordering,
 }: {
   items: (PlanCandidate & { reason: string })[];
   dropped: PlanCandidate[];
+  onInclude: (key: string) => void;
   reordering: boolean;
 }) {
   const total = items.length + dropped.length;
@@ -397,12 +412,16 @@ function Leftovers({
           <li key={l.key} className="flex items-baseline gap-2 text-[11.5px]">
             <span className="min-w-0 flex-1 truncate">{l.title}</span>
             <span className="shrink-0 font-mono text-[10px] text-muted">la sacaste vos</span>
+            <button onClick={() => onInclude(l.key)} className="shrink-0 rounded px-1.5 text-[11px] text-muted hover:text-ink">
+              Incluir
+            </button>
           </li>
         ))}
       </ul>
       <p className="mt-1.5 text-[11px] leading-snug text-muted">
+        {dropped.length > 0 && 'Si volvés a incluir alguna, se recalcula el reparto de tiempo con la nueva cantidad. '}
         {reordering
-          ? 'Se van a sacar de la agenda y vuelven al panel de tareas como pendientes.'
+          ? 'Lo que quede afuera se saca de la agenda y vuelve al panel de tareas como pendiente.'
           : 'Siguen pendientes en su grupo. Podés correr la hora de fin o dejarlas para mañana.'}
       </p>
     </div>
