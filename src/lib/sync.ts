@@ -284,6 +284,11 @@ async function doPush(): Promise<void> {
 
 export async function startSync(uid: string): Promise<void> {
   if (!supabase) return;
+  // Supabase puede volver a avisar "sesión iniciada" sin que haya pasado nada
+  // (se renovó el token solo, la pestaña recuperó el foco). Si ya estábamos
+  // sincronizando para este mismo usuario, no hay que reiniciar nada: frenar
+  // y volver a bajar todo tiraría a la basura una subida que esté en camino.
+  if (userId === uid) return;
   stopSync();
   userId = uid;
 
