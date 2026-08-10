@@ -12,11 +12,12 @@ export function Calendar({ days, onOpenBlock }: { days: Date[]; onOpenBlock: (id
   const updateBlock = useStore((s) => s.updateBlock);
   const blockFromTask = useStore((s) => s.blockFromTask);
   const addBreak = useStore((s) => s.addBreak);
+  const moveChain = useStore((s) => s.moveChain);
+  const resizeTop = useStore((s) => s.resizeTop);
 
   const tool = useUI((s) => s.tool);
   const range = useUI((s) => s.range);
   const setRange = useUI((s) => s.setRange);
-  const setMulti = useUI((s) => s.setMulti);
   const clearSelection = useUI((s) => s.clearSelection);
 
   const drag = useDrag((s) => s.drag);
@@ -64,8 +65,23 @@ export function Calendar({ days, onOpenBlock }: { days: Date[]; onOpenBlock: (id
       const p = pointToGrid(e.clientX, e.clientY);
       if (!p) return;
 
-      if (drag.mode === 'resize') {
+      if (drag.mode === 'resizeTop') {
+        // anchorMin guarda el final del bloque: crece hacia arriba sin moverlo.
+        const start = clamp(snap(p.min), dayStartMin, drag.anchorMin - SLOT_MIN);
+        update({ startMin: start, durationMin: drag.anchorMin - start, moved: true });
+      } else if (drag.mode === 'resize') {
         update({ durationMin: clamp(snap(p.min - drag.startMin), SLOT_MIN, dayEndMin - drag.startMin), moved: true });
+      } else if (drag.mode === 'new') {
+        // Solo cuenta como arrastre si el puntero llegó de verdad a la grilla.
+        const el = colsRef.current;
+        const r = el?.getBoundingClientRect();
+        const inside =
+          !!r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+        update({
+          dayIndex: p.dayIndex,
+          startMin: clamp(snap(p.min - drag.grabOffsetMin), dayStartMin, dayEndMin - drag.durationMin),
+          moved: drag.moved || inside,
+        });
       } else if (drag.mode === 'range') {
         // Crece hacia arriba o hacia abajo desde el punto donde apretaste
         const a = drag.anchorMin;
@@ -97,10 +113,22 @@ export function Calendar({ days, onOpenBlock }: { days: Date[]; onOpenBlock: (id
       if (d) {
         const day = days[clamp(d.dayIndex, 0, days.length - 1)];
 
-        if ((d.mode === 'move' || d.mode === 'resize') && d.blockId) {
-          if (d.moved) updateBlock(d.blockId, { startsAt: isoFor(day, d.startMin), durationMin: d.durationMin });
+        if (d.mode === 'resizeTop' && d.blockId) {
+          if (d.moved) resizeTop(day, d.blockId, d.startMin);
+        } else if ((d.mode === 'move' || d.mode === 'resize') && d.blockId) {
+          if (d.moved) {
+            const chained =
+              d.mode === 'move' &&
+              settings.chainMove &&
+              d.dayIndex === d.anchorDayIndex &&
+              d.durationMin === (useStore.getState().blocks[d.blockId]?.durationMin ?? -1);
+            if (chained) moveChain(day, d.blockId, d.startMin);
+            else updateBlock(d.blockId, { startsAt: isoFor(day, d.startMin), durationMin: d.durationMin });
+          }
         } else if (d.mode === 'new') {
-          if (d.kind === 'break') addBreak(day, d.startMin, d.durationMin);
+          // Sin arrastre no se agenda nada: un clic en el panel solo selecciona.
+          if (!d.moved) { /* nada */ }
+          else if (d.kind === 'break') addBreak(day, d.startMin, d.durationMin);
           else if (d.taskId) blockFromTask(d.taskId, day, d.startMin, d.durationMin);
         } else if (d.mode === 'range') {
           // Marcamos la franja y vos elegís qué poner: bloque o pausa
@@ -117,7 +145,8 @@ export function Calendar({ days, onOpenBlock }: { days: Date[]; onOpenBlock: (id
             .filter((b) => keys.has(b.startsAt.slice(0, 10)))
             .filter((b) => minutesOf(b.startsAt) < to && minutesOf(b.startsAt) + b.durationMin > from)
             .map((b) => b.id);
-          setMulti(hits);
+          // Herramienta de un solo uso: seleccionás y volvés al puntero normal.
+          useUI.setState({ tool: 'select', multi: hits, range: null });
         }
       }
       end();
@@ -324,7 +353,7 @@ function RangeOverlay({
   left: number; width: number; top: number; height: number;
   day: Date; startMin: number; durationMin: number;
 }) {
-  const addBlock = useStore((s) => s.addBlock);
+  const addAdhocBlock = useStore((s) => s.addAdhocBlock);
   const addBreak = useStore((s) => s.addBreak);
   const setRange = useUI((s) => s.setRange);
   const below = top < 90;
@@ -345,14 +374,7 @@ function RangeOverlay({
       >
         <span className="tabular px-1 font-mono text-[11.5px] text-muted">{durationLabel(durationMin)}</span>
         <button
-          onClick={() => {
-            addBlock({
-              taskId: null, title: 'Bloque', color: 'var(--accent)',
-              startsAt: isoFor(day, startMin), durationMin,
-              kind: 'adhoc', status: 'planned', closedAt: null, notes: '',
-            });
-            setRange(null);
-          }}
+          onClick={() => { addAdhocBlock(day, startMin, durationMin); setRange(null); }}
           className="rounded-lg px-2.5 py-1.5 text-[13px] font-semibold"
           style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
         >
@@ -384,7 +406,11 @@ function MultiBar() {
   const removeBlocks = useStore((s) => s.removeBlocks);
   const shiftBlocks = useStore((s) => s.shiftBlocks);
   const setDone = useStore((s) => s.setDone);
+  const setPinned = useStore((s) => s.setPinned);
+  const blocks = useStore((s) => s.blocks);
   if (!multi.length) return null;
+
+  const allPinned = multi.every((id) => blocks[id]?.pinned);
 
   return (
     <div
@@ -402,6 +428,12 @@ function MultiBar() {
           {d > 0 ? `+${d}` : d}m
         </button>
       ))}
+      <button
+        onClick={() => setPinned(multi, !allPinned)}
+        className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px] font-medium text-muted transition-colors hover:border-[var(--accent)] hover:text-ink"
+      >
+        {allPinned ? 'Soltar' : 'Fijar'}
+      </button>
       <button
         onClick={() => multi.forEach((id) => setDone(id, true))}
         className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px] font-medium text-muted transition-colors hover:border-[var(--accent)] hover:text-ink"

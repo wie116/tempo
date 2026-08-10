@@ -16,11 +16,16 @@ const WIDTHS = { sm: 'max-w-md', md: 'max-w-2xl', lg: 'max-w-4xl' };
 
 export function Modal({ open, onClose, title, subtitle, size = 'md', footer, children }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // onClose suele venir como flecha inline, o sea una función nueva en cada render.
+  // Si la ponemos como dependencia, el efecto corre en cada tecla y el focus()
+  // le roba el cursor al campo que estás escribiendo.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
+      if (e.key === 'Escape') { e.stopPropagation(); closeRef.current(); }
     };
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -30,7 +35,7 @@ export function Modal({ open, onClose, title, subtitle, size = 'md', footer, chi
       document.body.style.overflow = prev;
       window.removeEventListener('keydown', onKey);
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -310,5 +315,36 @@ export function ConfirmModal({
         )}
       </div>
     </Modal>
+  );
+}
+
+/** Pestañas para que un panel largo no se convierta en una pared de controles. */
+export function Tabs<T extends string>({
+  tabs, active, onChange,
+}: { tabs: { id: T; label: string }[]; active: T; onChange: (id: T) => void }) {
+  return (
+    <div className="flex gap-1 border-b border-line px-5 pt-3">
+      {tabs.map((t) => {
+        const on = t.id === active;
+        return (
+          <button
+            key={t.id}
+            onClick={() => onChange(t.id)}
+            aria-selected={on}
+            role="tab"
+            className="relative px-3 pb-2.5 pt-1 text-[13px] font-medium transition-colors"
+            style={{ color: on ? 'var(--text)' : 'var(--muted)' }}
+          >
+            {t.label}
+            {on && (
+              <span
+                className="absolute inset-x-2 -bottom-px h-[2px] rounded-full"
+                style={{ background: 'var(--accent)' }}
+              />
+            )}
+          </button>
+        );
+      })}
+    </div>
   );
 }

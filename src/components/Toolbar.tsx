@@ -1,6 +1,7 @@
 import { useStore, useUI } from '../store';
 import type { Tool } from '../store';
 import { ZOOM_STEPS, durationLabel, hhmm, zoomStep } from '../lib/time';
+import { redo, undo, useHistory } from '../lib/history';
 
 const TOOLS: { id: Tool; label: string; hint: string; icon: React.ReactNode }[] = [
   {
@@ -42,6 +43,10 @@ export function Toolbar({ onAutoplan }: { onAutoplan: (preset: 'wand' | 'dice') 
           </button>
         ))}
       </div>
+
+      <UndoRedo />
+
+      <ChainLock />
 
       <span className="mx-0.5 h-6 w-px bg-[var(--border)]" />
 
@@ -103,6 +108,64 @@ export function Toolbar({ onAutoplan }: { onAutoplan: (preset: 'wand' | 'dice') 
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+/** Candado: con esto activo, mover un bloque arrastra a los que vienen después. */
+function ChainLock() {
+  const on = useStore((s) => s.settings.chainMove);
+  const set = useStore((s) => s.updateSettings);
+  return (
+    <button
+      onClick={() => set({ chainMove: !on })}
+      aria-pressed={on}
+      title={
+        on
+          ? 'Encadenado: al mover un bloque, los siguientes del día se mueven con él'
+          : 'Suelto: cada bloque se mueve solo'
+      }
+      className="rounded-lg border p-2 transition-colors"
+      style={
+        on
+          ? { borderColor: 'var(--accent)', background: 'var(--accent)', color: 'var(--accent-fg)' }
+          : { borderColor: 'var(--border)', background: 'var(--surface)', color: 'var(--muted)' }
+      }
+    >
+      <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <rect x="3.2" y="7" width="9.6" height="6.4" rx="1.6" stroke="currentColor" strokeWidth="1.4" />
+        {on ? (
+          <path d="M5.6 7V5.2a2.4 2.4 0 0 1 4.8 0V7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        ) : (
+          <path d="M5.6 7V5.2a2.4 2.4 0 0 1 4.6-.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        )}
+      </svg>
+    </button>
+  );
+}
+
+
+/** Deshacer y rehacer. También responden a Ctrl+Z y Ctrl+Shift+Z. */
+function UndoRedo() {
+  const canUndo = useHistory((s) => s.canUndo);
+  const canRedo = useHistory((s) => s.canRedo);
+  const cls = 'rounded-md p-2 text-muted transition-colors hover:text-ink disabled:opacity-25';
+
+  return (
+    <div className="flex rounded-lg border border-line bg-surface p-0.5">
+      <button onClick={undo} disabled={!canUndo} title="Deshacer · Ctrl+Z" aria-label="Deshacer" className={cls}>
+        <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <path d="M3 7h6.2a3.4 3.4 0 0 1 0 6.8H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M5.6 4.2 2.8 7l2.8 2.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      <button onClick={redo} disabled={!canRedo} title="Rehacer · Ctrl+Shift+Z" aria-label="Rehacer" className={cls}>
+        <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <path d="M13 7H6.8a3.4 3.4 0 0 0 0 6.8H10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M10.4 4.2 13.2 7l-2.8 2.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
     </div>
   );
 }

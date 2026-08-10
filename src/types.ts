@@ -2,7 +2,8 @@ import type { ChimeId } from './lib/audio';
 
 export type ViewMode = 'day' | 'week' | 'month';
 export type BlockKind = 'task' | 'break' | 'adhoc';
-export type BlockStatus = 'planned' | 'done';
+/** 'skipped' = no lo hiciste: queda como registro y la tarea vuelve a estar disponible. */
+export type BlockStatus = 'planned' | 'done' | 'skipped';
 
 export interface List {
   id: string;
@@ -11,6 +12,8 @@ export interface List {
   order: number;
   collapsed: boolean;
 }
+
+export type RepeatMode = 'none' | 'daily' | 'weekly';
 
 export interface Task {
   id: string;
@@ -22,6 +25,10 @@ export interface Task {
   color: string | null;
   /** Las recurrentes no se gastan: siguen disponibles al agendarlas o completarlas. */
   recurring: boolean;
+  /** Repetición al agendarla: crea la serie completa de una vez. */
+  repeat: RepeatMode;
+  /** yyyy-MM-dd. null = hasta el tope del horizonte. */
+  repeatUntil: string | null;
   archived: boolean;
   notes: string;
   order: number;
@@ -39,12 +46,20 @@ export interface Block {
   status: BlockStatus;
   /** epoch ms del momento en que lo cerraste a mano. */
   closedAt: number | null;
+  /** Fijo: no se mueve por arrastre, ni por cadena, ni por la varita. */
+  pinned: boolean;
+  /** Une los bloques nacidos de una misma repetición. */
+  seriesId: string | null;
   notes: string;
 }
 
 export type PlanOrder = 'random' | 'list' | 'longest' | 'shortest';
 
+export type PlanSource = 'pending' | 'today';
+
 export interface AutoplanConfig {
+  /** 'pending' agenda tareas nuevas; 'today' reordena lo que ya está en el día. */
+  source: PlanSource;
   order: PlanOrder;
   /** 'now' arranca en la hora actual; 'dayStart' al inicio de la jornada. */
   from: 'now' | 'dayStart' | 'custom';
@@ -66,6 +81,8 @@ export interface Settings {
   slotPx: number;
   weekStartsOnMonday: boolean;
   rightPanelOpen: boolean;
+  /** Al mover un bloque, arrastrar con él los que vienen después. */
+  chainMove: boolean;
   defaultBlockMin: number;
   soundEnabled: boolean;
   volume: number;

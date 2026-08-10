@@ -33,24 +33,27 @@ const rowToList = (r: any): List => ({
 const taskToRow = (t: Task, userId: string) => ({
   id: t.id, user_id: userId, list_id: t.listId, title: t.title,
   estimated_min: t.estimatedMin, color: t.color, is_recurring: t.recurring,
+  repeat: t.repeat, repeat_until: t.repeatUntil,
   is_archived: t.archived, notes: t.notes ?? '', sort_order: t.order,
 });
 const rowToTask = (r: any): Task => ({
   id: r.id, listId: r.list_id, title: r.title,
   estimatedMin: r.estimated_min ?? null, color: r.color ?? null,
-  recurring: !!r.is_recurring, archived: !!r.is_archived,
-  notes: r.notes ?? '', order: r.sort_order ?? 0,
+  recurring: !!r.is_recurring, repeat: r.repeat ?? 'none', repeatUntil: r.repeat_until ?? null,
+  archived: !!r.is_archived, notes: r.notes ?? '', order: r.sort_order ?? 0,
 });
 
 const blockToRow = (b: Block, userId: string) => ({
   id: b.id, user_id: userId, task_id: b.taskId, title: b.title, color: b.color,
   starts_at: b.startsAt, duration_min: b.durationMin, kind: b.kind,
-  status: b.status, closed_at: b.closedAt, notes: b.notes ?? '',
+  status: b.status, closed_at: b.closedAt, pinned: b.pinned,
+  series_id: b.seriesId, notes: b.notes ?? '',
 });
 const rowToBlock = (r: any): Block => ({
   id: r.id, taskId: r.task_id ?? null, title: r.title, color: r.color,
   startsAt: r.starts_at, durationMin: r.duration_min, kind: r.kind,
-  status: r.status, closedAt: r.closed_at ?? null, notes: r.notes ?? '',
+  status: r.status, closedAt: r.closed_at ?? null, pinned: !!r.pinned,
+  seriesId: r.series_id ?? null, notes: r.notes ?? '',
 });
 
 /* ---------- Instantánea para saber qué cambió ---------- */
@@ -75,7 +78,21 @@ function snapshotOf(lists: List[], tasks: Task[], blocks: Record<string, Block>,
 
 let synced: Snapshot = emptySnapshot();
 let userId: string | null = null;
+
+/**
+ * Si acabamos de escribir, una bajada que ya estaba en camino (disparada por
+ * el eco de Realtime de nuestro propio cambio anterior) todavía puede
+ * pensar que el dato viejo es el vigente y pisar lo que recién restauraste.
+ * Mientras esta ventana esté abierta, confiamos en lo local y no bajamos nada.
+ */
+let suppressPullUntil = 0;
+export function holdPulls(ms = 2000): void {
+  suppressPullUntil = Math.max(suppressPullUntil, Date.now() + ms);
+}
 let applyingRemote = false;
+
+/** El historial de deshacer no debe registrar lo que baja de la nube. */
+export const isApplyingRemote = () => applyingRemote;
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 let pullTimer: ReturnType<typeof setTimeout> | null = null;
 let unsubscribeStore: (() => void) | null = null;
@@ -123,23 +140,83 @@ export async function pullAll(): Promise<void> {
 async function seedRemoteIfEmpty(): Promise<boolean> {
   if (!supabase || !userId) return false;
   const { count, error } = await supabase.from('lists').select('id', { count: 'exact', head: true });
-  if (error) return false;
+  if (error) throw error;
   if ((count ?? 0) > 0) return false;
 
   const { lists, tasks, blocks, settings } = useStore.getState();
   if (lists.length === 0 && Object.keys(blocks).length === 0) return false;
 
-  await supabase.from('lists').upsert(lists.map((x) => listToRow(x, userId!)));
-  await supabase.from('tasks').upsert(tasks.map((x) => taskToRow(x, userId!)));
-  await supabase.from('blocks').upsert(Object.values(blocks).map((x) => blockToRow(x, userId!)));
-  await supabase.from('profiles').upsert({ id: userId, settings });
+  await uploadEverything(lists, tasks, blocks, settings);
   synced = snapshotOf(lists, tasks, blocks, settings);
   return true;
 }
 
+/** Sube el estado completo, en tandas y comprobando cada paso. */
+async function uploadEverything(
+  lists: List[], tasks: Task[], blocks: Record<string, Block>, settings: Settings
+): Promise<void> {
+  if (!supabase || !userId) return;
+
+  const chunk = <T,>(arr: T[], n = 400): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+    return out;
+  };
+
+  // Padres primero: un bloque no puede apuntar a una tarea que todavía no existe.
+  for (const part of chunk(lists)) {
+    const { error } = await supabase.from('lists').upsert(part.map((x) => listToRow(x, userId!)));
+    if (error) throw new Error(`Grupos: ${error.message}`);
+  }
+  for (const part of chunk(tasks)) {
+    const { error } = await supabase.from('tasks').upsert(part.map((x) => taskToRow(x, userId!)));
+    if (error) throw new Error(`Tareas: ${error.message}`);
+  }
+  for (const part of chunk(Object.values(blocks))) {
+    const { error } = await supabase.from('blocks').upsert(part.map((x) => blockToRow(x, userId!)));
+    if (error) throw new Error(`Bloques: ${error.message}`);
+  }
+  const { error } = await supabase.from('profiles').upsert({ id: userId, settings });
+  if (error) throw new Error(`Ajustes: ${error.message}`);
+
+  suppressPullUntil = Date.now() + 1200;
+}
+
+/** Fuerza la subida de todo, ignorando lo que creíamos ya sincronizado. */
+export async function forcePushAll(): Promise<void> {
+  if (!supabase || !userId) return;
+  useSync.getState().set({ status: 'syncing', lastError: null });
+  try {
+    const { lists, tasks, blocks, settings } = useStore.getState();
+    await uploadEverything(lists, tasks, blocks, settings);
+    synced = snapshotOf(lists, tasks, blocks, settings);
+    useSync.getState().set({ status: 'idle', lastSyncedAt: Date.now() });
+  } catch (e: any) {
+    useSync.getState().set({ status: 'error', lastError: e?.message ?? 'Error al subir' });
+  }
+}
+
+/** Cuántas filas hay realmente del lado del servidor. */
+export async function fetchRemoteCounts(): Promise<{ lists: number; tasks: number; blocks: number } | null> {
+  if (!supabase || !userId) return null;
+  const head = { count: 'exact' as const, head: true };
+  const [l, t, b] = await Promise.all([
+    supabase.from('lists').select('id', head),
+    supabase.from('tasks').select('id', head),
+    supabase.from('blocks').select('id', head),
+  ]);
+  if (l.error || t.error || b.error) return null;
+  return { lists: l.count ?? 0, tasks: t.count ?? 0, blocks: b.count ?? 0 };
+}
+
 /* ---------- Subir solo lo que cambió ---------- */
 
-async function pushChanges(): Promise<void> {
+function pushChanges(): Promise<void> {
+  pushChain = pushChain.then(doPush).catch(() => {});
+  return pushChain;
+}
+
+async function doPush(): Promise<void> {
   if (!supabase || !userId || applyingRemote) return;
   const { lists, tasks, blocks, settings } = useStore.getState();
   const next = snapshotOf(lists, tasks, blocks, settings);
@@ -162,9 +239,18 @@ async function pushChanges(): Promise<void> {
 
   try {
     // Orden importante: primero borrar hijos, después padres.
-    if (goneBlocks.length) await supabase.from('blocks').delete().in('id', goneBlocks);
-    if (goneTasks.length) await supabase.from('tasks').delete().in('id', goneTasks);
-    if (goneLists.length) await supabase.from('lists').delete().in('id', goneLists);
+    if (goneBlocks.length) {
+      const { error } = await supabase.from('blocks').delete().in('id', goneBlocks);
+      if (error) throw new Error(`Borrar bloques: ${error.message}`);
+    }
+    if (goneTasks.length) {
+      const { error } = await supabase.from('tasks').delete().in('id', goneTasks);
+      if (error) throw new Error(`Borrar tareas: ${error.message}`);
+    }
+    if (goneLists.length) {
+      const { error } = await supabase.from('lists').delete().in('id', goneLists);
+      if (error) throw new Error(`Borrar grupos: ${error.message}`);
+    }
 
     // Y al insertar, al revés: padres primero.
     if (changedLists.length) {
@@ -185,6 +271,9 @@ async function pushChanges(): Promise<void> {
     }
 
     synced = next;
+    // Acabamos de escribir: si una bajada estaba en camino (el eco de Realtime
+    // de este mismo cambio), le damos margen para no pisar lo que recién subió.
+    suppressPullUntil = Date.now() + 1200;
     useSync.getState().set({ status: 'idle', lastError: null, lastSyncedAt: Date.now() });
   } catch (e: any) {
     useSync.getState().set({ status: 'error', lastError: e?.message ?? 'Error al sincronizar' });
@@ -198,9 +287,13 @@ export async function startSync(uid: string): Promise<void> {
   stopSync();
   userId = uid;
 
-  const seeded = await seedRemoteIfEmpty();
-  if (!seeded) await pullAll();
-  else useSync.getState().set({ status: 'idle', lastSyncedAt: Date.now() });
+  try {
+    const seeded = await seedRemoteIfEmpty();
+    if (!seeded) await pullAll();
+    else useSync.getState().set({ status: 'idle', lastSyncedAt: Date.now() });
+  } catch (e: any) {
+    useSync.getState().set({ status: 'error', lastError: e?.message ?? 'No se pudo subir tu agenda' });
+  }
 
   // Cada cambio local se agrupa 500 ms antes de viajar: escribir en un campo
   // de texto no dispara veinte peticiones.
@@ -220,10 +313,27 @@ export async function startSync(uid: string): Promise<void> {
   window.addEventListener('beforeunload', flushSync);
 }
 
-/** Un cambio desde otro dispositivo: volvemos a bajar todo, que es más simple y seguro. */
+/**
+ * Un cambio desde otro dispositivo: volvemos a bajar todo.
+ * Antes de bajar, mandamos lo que tengamos pendiente. Si no, la bajada
+ * pisaría un cambio local recién hecho y el bloque "volvería" a su lugar viejo.
+ */
 function schedulePull() {
   if (pullTimer) clearTimeout(pullTimer);
-  pullTimer = setTimeout(() => void pullAll(), 800);
+  pullTimer = setTimeout(async () => {
+    await pushPending();
+    if (Date.now() < suppressPullUntil) return; // acabamos de escribir: lo local manda
+    await pullAll();
+  }, 800);
+}
+
+/** Vacía la cola de subida y espera a que termine. */
+async function pushPending(): Promise<void> {
+  if (pushTimer) {
+    clearTimeout(pushTimer);
+    pushTimer = null;
+  }
+  await pushChanges();
 }
 
 function flushSync() {
@@ -233,6 +343,9 @@ function flushSync() {
     void pushChanges();
   }
 }
+
+/** Nunca dos subidas a la vez: la segunda espera a la primera. */
+let pushChain: Promise<void> = Promise.resolve();
 
 export function stopSync(): void {
   if (unsubscribeStore) { unsubscribeStore(); unsubscribeStore = null; }

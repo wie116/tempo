@@ -71,8 +71,8 @@ export const fmt = (d: Date, pattern: string) => format(d, pattern, { locale: es
 
 /** Rango de zoom: de una hora aplastada a bloques de 10 min bien legibles. */
 export const ZOOM_MIN = 4;
-export const ZOOM_MAX = 48;
-export const ZOOM_STEPS = [4, 5, 6, 8, 10, 12, 14, 17, 20, 24, 28, 34, 40, 48];
+export const ZOOM_MAX = 96;
+export const ZOOM_STEPS = [4, 5, 6, 8, 10, 12, 14, 17, 20, 24, 30, 38, 48, 60, 76, 96];
 
 export function zoomStep(current: number, dir: 1 | -1): number {
   const i = ZOOM_STEPS.reduce(

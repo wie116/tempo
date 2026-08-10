@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react';
-import { useDrag, useStore } from '../store';
+import { useDrag, useStore, useUI } from '../store';
+import { startPointerGesture } from '../lib/gesture';
 import { durationLabel } from '../lib/time';
 import type { Task } from '../types';
 
-export function Sidebar({ onOpenTasks, onClose }: { onOpenTasks: () => void; onClose?: () => void }) {
+export function Sidebar({
+  onOpenTasks, onEditTask, onClose,
+}: { onOpenTasks: () => void; onEditTask: (id: string) => void; onClose?: () => void }) {
   const lists = useStore((s) => s.lists);
   const tasks = useStore((s) => s.tasks);
   const addTask = useStore((s) => s.addTask);
@@ -15,7 +18,8 @@ export function Sidebar({ onOpenTasks, onClose }: { onOpenTasks: () => void; onC
   /** Una tarea no recurrente se atenúa mientras tenga un bloque en la agenda. */
   const scheduled = useMemo(() => {
     const ids = new Set<string>();
-    for (const b of Object.values(allBlocks)) if (b.taskId) ids.add(b.taskId);
+    // Un bloque omitido no consume la tarea: vuelve a estar disponible.
+    for (const b of Object.values(allBlocks)) if (b.taskId && b.status !== 'skipped') ids.add(b.taskId);
     return ids;
   }, [allBlocks]);
 
@@ -82,8 +86,8 @@ export function Sidebar({ onOpenTasks, onClose }: { onOpenTasks: () => void; onC
                     <TaskChip
                       task={task}
                       groupColor={list.color}
-                      dimmed={!task.recurring && scheduled.has(task.id)}
-                      onEdit={onOpenTasks}
+                      dimmed={!task.recurring && task.repeat === 'none' && scheduled.has(task.id)}
+                      onEdit={() => onEditTask(task.id)}
                     />
                   </li>
                 ))}
@@ -130,41 +134,61 @@ function TaskChip({
 }: { task: Task; groupColor: string; dimmed: boolean; onEdit: () => void }) {
   const begin = useDrag((s) => s.begin);
   const defaultMin = useStore((s) => s.settings.defaultBlockMin);
+  const focused = useUI((s) => s.focusedTaskId === task.id);
+  const focusTask = useUI((s) => s.focusTask);
   const color = task.color ?? groupColor;
+  const repeats = task.repeat !== 'none';
 
   return (
     <div
       onPointerDown={(e) => {
         if (e.button !== 0) return;
-        e.preventDefault();
-        begin({
-          mode: 'new', taskId: task.id, title: task.title, color, kind: 'task',
-          grabOffsetMin: 0, durationMin: task.estimatedMin ?? defaultMin,
-          dayIndex: 0, startMin: 9 * 60, anchorMin: 9 * 60, anchorDayIndex: 0, moved: false,
+        focusTask(task.id);
+        startPointerGesture(e, {
+          // Un clic solo selecciona. Para agendarla hay que arrastrarla hasta la grilla.
+          onDrag: () =>
+            begin({
+              mode: 'new', taskId: task.id, title: task.title, color, kind: 'task',
+              grabOffsetMin: 0, durationMin: task.estimatedMin ?? defaultMin,
+              dayIndex: 0, startMin: 9 * 60, anchorMin: 9 * 60, anchorDayIndex: 0, moved: false,
+            }),
         });
       }}
       className={[
-        'group flex cursor-grab items-center gap-2.5 rounded-lg border border-line bg-surface px-2.5 py-2 transition-colors',
-        'hover:border-[color-mix(in_oklab,var(--accent)_45%,var(--border))]',
+        'group grid cursor-grab items-center gap-2 rounded-lg border bg-surface px-2.5 py-2 transition-colors',
         dimmed ? 'opacity-45' : '',
       ].join(' ')}
-      style={{ touchAction: 'none' }}
+      style={{
+        // Columnas fijas: el título es lo único elástico, así los iconos
+        // caen siempre en la misma vertical aunque la tarea no los tenga.
+        gridTemplateColumns: '3px minmax(0,1fr) 12px 46px 18px',
+        touchAction: 'pan-y',
+        borderColor: focused ? 'var(--accent)' : 'var(--border)',
+        boxShadow: focused ? '0 0 0 1px var(--accent)' : undefined,
+      }}
     >
-      <span className="h-5 w-[3px] shrink-0 rounded-full" style={{ background: color }} />
-      <span className="min-w-0 flex-1 truncate text-[13.5px]">{task.title}</span>
-      {task.recurring && <span className="shrink-0 text-[10px]" style={{ color }} title="Recurrente">↻</span>}
-      <span className="tabular shrink-0 font-mono text-[11px] text-muted">
+      <span className="h-5 w-[3px] rounded-full" style={{ background: color }} />
+      <span className="min-w-0 truncate text-[13.5px]">{task.title}</span>
+      <span className="text-center text-[10px] leading-none" style={{ color: repeats || task.recurring ? color : 'transparent' }}>
+        {repeats ? '⟳' : '↻'}
+      </span>
+      <span className="tabular text-right font-mono text-[11px] text-muted">
         {task.estimatedMin ? durationLabel(task.estimatedMin) : '—'}
       </span>
       <button
         onPointerDown={(e) => e.stopPropagation()}
-        onClick={onEdit}
-        className="hidden shrink-0 text-[10px] text-muted hover:text-ink group-hover:block"
-        title="Editar"
+        onClick={(e) => { e.stopPropagation(); onEdit(); }}
+        aria-label={`Editar ${task.title}`}
+        title="Editar tarea"
+        className={`grid h-[18px] w-[18px] place-items-center rounded text-muted transition-opacity hover:text-ink ${
+          focused ? 'opacity-80' : 'opacity-0 group-hover:opacity-80'
+        }`}
       >
-        ⋯
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
+          <path d="M11.2 2.6a1.3 1.3 0 0 1 1.9 0l.3.3a1.3 1.3 0 0 1 0 1.9L6.2 12 3.5 12.5 4 9.8l7.2-7.2Z"
+            stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+        </svg>
       </button>
     </div>
   );
 }
-

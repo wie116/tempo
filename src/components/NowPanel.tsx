@@ -16,7 +16,7 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
   const dayStartHour = useStore((s) => s.settings.dayStartHour);
   const dayEndHour = useStore((s) => s.settings.dayEndHour);
   const blocks = useStore((s) => s.blocks);
-  const setDone = useStore((s) => s.setDone);
+  const setStatus = useStore((s) => s.setStatus);
   const now = useClock((s) => s.now);
 
   const d = new Date(now);
@@ -178,17 +178,27 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
             )}
 
             {current.kind !== 'break' && (
-              <button
-                onClick={() => setDone(current.id, current.status !== 'done')}
-                className="mt-3.5 w-full rounded-lg py-2.5 text-[14px] font-semibold"
-                style={
-                  current.status === 'done'
-                    ? { border: '1px solid var(--border)', color: 'var(--muted)' }
-                    : { background: 'var(--accent)', color: 'var(--accent-fg)' }
-                }
-              >
-                {current.status === 'done' ? 'Marcado como hecho' : 'Completar'}
-              </button>
+              <div className="mt-3.5 flex gap-2">
+                <button
+                  onClick={() => setStatus(current.id, current.status === 'done' ? 'planned' : 'done')}
+                  className="flex-1 rounded-lg py-2.5 text-[14px] font-semibold"
+                  style={
+                    current.status === 'done'
+                      ? { border: '1px solid var(--border)', color: 'var(--muted)' }
+                      : { background: 'var(--accent)', color: 'var(--accent-fg)' }
+                  }
+                >
+                  {current.status === 'done' ? 'Hecho ✓' : 'Completar'}
+                </button>
+                <button
+                  onClick={() => setStatus(current.id, current.status === 'skipped' ? 'planned' : 'skipped')}
+                  title="No lo estoy haciendo: queda como omitido y la tarea vuelve a pendientes"
+                  className="rounded-lg border border-line px-3 py-2.5 text-[13px] font-medium"
+                  style={current.status === 'skipped' ? { borderColor: 'var(--muted)', color: 'var(--text)' } : { color: 'var(--muted)' }}
+                >
+                  {current.status === 'skipped' ? 'Omitido' : 'Saltear'}
+                </button>
+              </div>
             )}
           </div>
         ) : (

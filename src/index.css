@@ -10,6 +10,8 @@
   --font-ui: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
   --radius: 10px;
+  /* Rojo del candado: es un estado permanente, tiene que verse de lejos. */
+  --pin: #d93a2b;
   --shadow-card: 0 1px 2px rgb(0 0 0 / .04), 0 8px 24px -12px rgb(0 0 0 / .12);
   --shadow-modal: 0 24px 64px -16px rgb(0 0 0 / .35);
 }
@@ -44,6 +46,7 @@
 
 /* 5 · Estudio — pizarra oscura y menta */
 [data-theme='studio'] {
+  --pin: #ff6a55;
   --bg: #10161a; --surface: #1a2125; --surface-2: #232c31; --border: #2e383e;
   --text: #e4ecea; --muted: #8a9995; --accent: #4fd1a5; --accent-fg: #08120f;
   --now: #f0ab4a; --grid-line: #1f292e; --grid-line-strong: #2b373d; --scrim: 0 0 0;
@@ -51,6 +54,7 @@
 
 /* 6 · Marino — azul profundo y cian */
 [data-theme='marina'] {
+  --pin: #ff7a63;
   --bg: #0d1626; --surface: #152135; --surface-2: #1e2c45; --border: #2a3a58;
   --text: #dde7f8; --muted: #8296b6; --accent: #58c6e8; --accent-fg: #06121f;
   --now: #f2b85c; --grid-line: #1a2840; --grid-line-strong: #26364f; --scrim: 2 8 20;
@@ -137,4 +141,15 @@ body {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: .35; }
+}
+
+/* Bloques omitidos: rayado tenue para que se lean como registro, no como plan */
+.skipped-fill {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in oklab, var(--muted) 22%, transparent),
+    color-mix(in oklab, var(--muted) 22%, transparent) 4px,
+    transparent 4px,
+    transparent 10px
+  );
 }

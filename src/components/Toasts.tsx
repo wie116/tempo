@@ -18,7 +18,7 @@ export function Toasts() {
 function ToastCard({ id }: { id: string }) {
   const toast = useToasts((s) => s.toasts.find((t) => t.id === id));
   const dismiss = useToasts((s) => s.dismiss);
-  const setDone = useStore((s) => s.setDone);
+  const setStatus = useStore((s) => s.setStatus);
   const extendBlock = useStore((s) => s.extendBlock);
   const [extending, setExtending] = useState(false);
   const [extra, setExtra] = useState<number | null>(20);
@@ -68,7 +68,7 @@ function ToastCard({ id }: { id: string }) {
           ) : (
             <div className="flex gap-1.5">
               <button
-                onClick={() => { setDone(toast.blockId!, true); dismiss(toast.id); }}
+                onClick={() => { setStatus(toast.blockId!, 'done'); dismiss(toast.id); }}
                 className="flex-1 rounded-lg px-2 py-1.5 text-[12px] font-semibold"
                 style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
               >
@@ -76,9 +76,16 @@ function ToastCard({ id }: { id: string }) {
               </button>
               <button
                 onClick={() => setExtending(true)}
-                className="flex-1 rounded-lg border border-line px-2 py-1.5 text-[12px] text-muted hover:text-ink"
+                className="rounded-lg border border-line px-2 py-1.5 text-[12px] text-muted hover:text-ink"
               >
                 Más tiempo
+              </button>
+              <button
+                onClick={() => { setStatus(toast.blockId!, 'skipped'); dismiss(toast.id); }}
+                title="Queda como omitido y la tarea vuelve a pendientes"
+                className="rounded-lg border border-line px-2 py-1.5 text-[12px] text-muted hover:text-ink"
+              >
+                No lo hice
               </button>
             </div>
           )}

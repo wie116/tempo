@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { parseISO } from 'date-fns';
 import { useStore, useUI } from './store';
-import { dateKey, weekDays, zoomStep } from './lib/time';
+import { weekDays } from './lib/time';
 import { unlockAudio } from './lib/audio';
 import { useClockEngine } from './hooks/useClockEngine';
 import { useAuth } from './hooks/useAuth';
+import { initHistory, redo, undo } from './lib/history';
+import { holdPulls, syncNow } from './lib/sync';
 import { AuthScreen } from './components/AuthScreen';
 import { TopBar } from './components/TopBar';
 import { Toolbar } from './components/Toolbar';
@@ -15,7 +17,7 @@ import { MonthView } from './components/MonthView';
 import { TimerBar } from './components/TimerBar';
 import { Toasts } from './components/Toasts';
 import { SettingsModal } from './components/SettingsModal';
-import { TasksModal } from './components/TasksModal';
+import { TaskEditModal, TasksModal } from './components/TasksModal';
 import { BlockModal } from './components/BlockModal';
 import { AutoplanModal } from './components/AutoplanModal';
 import { TodayModal } from './components/TodayModal';
@@ -40,21 +42,16 @@ function typingNow(target: EventTarget | null): boolean {
 export default function App() {
   const { session, ready, cloudEnabled } = useAuth();
   const view = useStore((s) => s.view);
-  const setView = useStore((s) => s.setView);
   const cursor = useStore((s) => s.cursor);
-  const setCursor = useStore((s) => s.setCursor);
   const theme = useStore((s) => s.settings.theme);
-  const slotPx = useStore((s) => s.settings.slotPx);
-  const setZoom = useStore((s) => s.setZoom);
   const mondayFirst = useStore((s) => s.settings.weekStartsOnMonday);
-  const setTool = useUI((s) => s.setTool);
-  const clearSelection = useUI((s) => s.clearSelection);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [todayOpen, setTodayOpen] = useState(false);
   const [blockId, setBlockId] = useState<string | null>(null);
+  const [taskId, setTaskId] = useState<string | null>(null);
   const [autoplan, setAutoplan] = useState<'wand' | 'dice' | null>(null);
 
   const anchor = parseISO(cursor);
@@ -78,45 +75,39 @@ export default function App() {
     return once;
   }, []);
 
+  /**
+   * Solo dejamos Suprimir. Los atajos de una sola letra se disparaban mientras
+   * escribías y no vale la pena pelear con cada campo de la app.
+   */
+  useEffect(() => initHistory(), []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === 'Escape') { clearSelection(); return; }
-      if (typingNow(e.target)) return;
-
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        const ui = useUI.getState();
-        const ids = ui.multi.length ? ui.multi : ui.focusedBlockId ? [ui.focusedBlockId] : [];
-        if (ids.length) {
-          e.preventDefault();
-          useStore.getState().removeBlocks(ids);
-          ui.clearSelection();
-        }
+      // En un campo de texto, Ctrl+Z lo maneja el navegador.
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typingNow(e.target)) {
+        e.preventDefault();
+        // Evita que una bajada ya programada pise el deshacer antes de
+        // que termine de subir; y lo subimos ya mismo en vez de esperar.
+        holdPulls();
+        if (e.shiftKey) redo();
+        else undo();
+        void syncNow();
         return;
       }
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (typingNow(e.target)) return;
 
-      switch (e.key.toLowerCase()) {
-        case 'd': setView('day'); break;
-        case 's': case 'w': setView('week'); break;
-        case 'm': setView('month'); break;
-        case 't': setCursor(dateKey(new Date())); break;
-        case 'v': setTool('select'); break;
-        case 'c': setTool('box'); break;
-        case 'r': {
-          const st = useStore.getState();
-          st.updateSettings({ rightPanelOpen: !st.settings.rightPanelOpen });
-          break;
-        }
-        case 'l': setTasksOpen(true); break;
-        case 'h': setTodayOpen(true); break;
-        case '+': case '=': setZoom(zoomStep(slotPx, 1)); break;
-        case '-': setZoom(zoomStep(slotPx, -1)); break;
-        case ',': setSettingsOpen(true); break;
-      }
+      const ui = useUI.getState();
+      const ids = ui.multi.length ? ui.multi : ui.focusedBlockId ? [ui.focusedBlockId] : [];
+      if (!ids.length) return;
+      e.preventDefault();
+      useStore.getState().removeBlocks(ids);
+      ui.clearSelection();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setView, setCursor, setTool, clearSelection, setZoom, slotPx]);
+  }, []);
 
   if (!ready) {
     return (
@@ -139,7 +130,7 @@ export default function App() {
 
       <div className="flex min-h-0 flex-1">
         <aside className="hidden w-72 shrink-0 border-r border-line lg:block">
-          <Sidebar onOpenTasks={() => setTasksOpen(true)} />
+          <Sidebar onOpenTasks={() => setTasksOpen(true)} onEditTask={setTaskId} />
         </aside>
 
         {sidebarOpen && (
@@ -147,6 +138,7 @@ export default function App() {
             <div className="h-full w-80 max-w-[88%] shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <Sidebar
                 onOpenTasks={() => { setTasksOpen(true); setSidebarOpen(false); }}
+                onEditTask={(id) => { setTaskId(id); setSidebarOpen(false); }}
                 onClose={() => setSidebarOpen(false)}
               />
             </div>
@@ -181,6 +173,7 @@ export default function App() {
         onAutoplan={() => setAutoplan('wand')}
       />
       <BlockModal id={blockId} onClose={() => setBlockId(null)} />
+      <TaskEditModal id={taskId} onClose={() => setTaskId(null)} />
       {autoplan && (
         <AutoplanModal open onClose={() => setAutoplan(null)} preset={autoplan} />
       )}

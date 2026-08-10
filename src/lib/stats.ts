@@ -5,6 +5,7 @@ import { dateKey, minutesOf } from './time';
 export interface Stats {
   todayPlanned: number;
   todayDone: number;
+  todaySkipped: number;
   todayPlannedMin: number;
   todayDoneMin: number;
   /** Bloques que terminaron y siguen sin cerrar. */
@@ -36,6 +37,7 @@ export function computeStats(blocks: Record<string, Block>, now = new Date()): S
 
   const today = all.filter((b) => b.startsAt.slice(0, 10) === todayKey);
   const todayDone = today.filter((b) => b.status === 'done');
+  const todaySkipped = today.filter((b) => b.status === 'skipped').length;
 
   const openPast = today.filter(
     (b) => b.status === 'planned' && minutesOf(b.startsAt) + b.durationMin <= nowMin
@@ -83,12 +85,13 @@ export function computeStats(blocks: Record<string, Block>, now = new Date()): S
   const missed = new Map<string, number>();
   for (const b of all) {
     const past = b.startsAt.slice(0, 10) < todayKey;
-    if (past && b.status === 'planned') missed.set(b.title, (missed.get(b.title) ?? 0) + 1);
+    if (past && b.status !== 'done') missed.set(b.title, (missed.get(b.title) ?? 0) + 1);
   }
 
   return {
     todayPlanned: today.length,
     todayDone: todayDone.length,
+    todaySkipped,
     todayPlannedMin: today.reduce((n, b) => n + b.durationMin, 0),
     todayDoneMin: todayDone.reduce((n, b) => n + b.durationMin, 0),
     openPast,

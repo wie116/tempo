@@ -1,11 +1,15 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { parseISO } from 'date-fns';
-import type { Block, BlockKind, List, Settings, Task, ViewMode } from './types';
+import type { Block, BlockKind, BlockStatus, List, Settings, Task, ViewMode } from './types';
 import { uid } from './lib/id';
-import { SLOT_MIN, dateKey, isoFor, minutesOf, snap } from './lib/time';
+import { SLOT_MIN, clamp, dateKey, isoFor, minutesOf, snap } from './lib/time';
 import { PALETTE } from './lib/themes';
+import { expandSeries } from './lib/repeat';
 import type { PlanItem } from './lib/autoplan';
+
+/** Grupo donde caen los bloques creados a mano, sin tarea previa. */
+export const UNSORTED_NAME = 'Sin clasificar';
 
 const DEFAULT_SETTINGS: Settings = {
   theme: 'daylight',
@@ -14,7 +18,8 @@ const DEFAULT_SETTINGS: Settings = {
   slotPx: 12,
   weekStartsOnMonday: true,
   rightPanelOpen: true,
-  defaultBlockMin: 30,
+  chainMove: false,
+  defaultBlockMin: 10,
   soundEnabled: true,
   volume: 0.6,
   chime: 'bell',
@@ -22,11 +27,12 @@ const DEFAULT_SETTINGS: Settings = {
   startChime: true,
   closePrompt: true,
   autoplan: {
+    source: 'pending',
     order: 'list',
     from: 'now',
     customFromMin: 9 * 60,
     untilMin: 20 * 60,
-    defaultMin: 30,
+    defaultMin: 10,
     gapMin: 0,
     listIds: null,
     includeRecurring: true,
@@ -46,29 +52,50 @@ function packDay(
   const anchor = sameDay.find((b) => b.id === anchorId);
   if (!anchor || sameDay.length < 2) return blocks;
 
-  const anchorStart = minutesOf(anchor.startsAt);
-  const taken = [{ start: anchorStart, end: anchorStart + anchor.durationMin }];
-  const rest = sameDay
-    .filter((b) => b.id !== anchorId)
-    .sort((a, b) => minutesOf(a.startsAt) - minutesOf(b.startsAt) || a.id.localeCompare(b.id));
-
   const out = { ...blocks };
-  for (const b of rest) {
+  const taken: { start: number; end: number }[] = [];
+
+  const place = (b: Block, immovable: boolean): number => {
     let start = minutesOf(b.startsAt);
-    let guard = 0;
-    let bumped = true;
-    while (bumped && guard++ < 300) {
-      bumped = false;
-      for (const t of taken) {
-        if (start < t.end && start + b.durationMin > t.start) {
-          start = t.end;
-          bumped = true;
+    if (!immovable) {
+      let guard = 0;
+      let bumped = true;
+      while (bumped && guard++ < 300) {
+        bumped = false;
+        for (const t of taken) {
+          if (start < t.end && start + b.durationMin > t.start) {
+            start = t.end;
+            bumped = true;
+          }
         }
       }
+      start = snap(Math.min(start, Math.max(0, dayEndMin - b.durationMin)));
     }
-    start = snap(Math.min(start, Math.max(0, dayEndMin - b.durationMin)));
     taken.push({ start, end: start + b.durationMin });
-    if (start !== minutesOf(b.startsAt)) out[b.id] = { ...b, startsAt: isoFor(parseISO(b.startsAt), start) };
+    return start;
+  };
+
+  // 1) Los fijos no se mueven jamás, ni siquiera por el bloque que acabás de soltar.
+  for (const b of sameDay.filter((x) => x.pinned)) place(b, true);
+
+  // 2) El que acabás de mover manda sobre el resto, pero cede ante un fijo.
+  if (!anchor.pinned) {
+    const start = place(anchor, false);
+    if (start !== minutesOf(anchor.startsAt)) {
+      out[anchor.id] = { ...anchor, startsAt: isoFor(parseISO(anchor.startsAt), start) };
+    }
+  }
+
+  // 3) Los demás se acomodan alrededor.
+  const rest = sameDay
+    .filter((b) => b.id !== anchorId && !b.pinned)
+    .sort((a, b) => minutesOf(a.startsAt) - minutesOf(b.startsAt) || a.id.localeCompare(b.id));
+
+  for (const b of rest) {
+    const start = place(b, false);
+    if (start !== minutesOf(b.startsAt)) {
+      out[b.id] = { ...b, startsAt: isoFor(parseISO(b.startsAt), start) };
+    }
   }
   return out;
 }
@@ -77,6 +104,8 @@ function packDay(
 function normalize(b: Block): Block {
   return {
     ...b,
+    pinned: Boolean(b.pinned),
+    seriesId: b.seriesId ?? null,
     startsAt: isoFor(parseISO(b.startsAt), snap(minutesOf(b.startsAt))),
     durationMin: Math.max(SLOT_MIN, snap(b.durationMin)),
   };
@@ -89,6 +118,8 @@ interface State {
   settings: Settings;
   view: ViewMode;
   cursor: string;
+  /** Grupo automático para los bloques sueltos. */
+  unsortedListId: string | null;
 
   setView: (v: ViewMode) => void;
   setCursor: (d: string) => void;
@@ -105,14 +136,29 @@ interface State {
   updateTask: (id: string, patch: Partial<Task>) => void;
   removeTask: (id: string) => void;
 
+  ensureUnsortedList: () => string;
   addBlock: (b: Omit<Block, 'id'>) => string;
+  /** Bloque creado a mano: le damos una tarea para poder administrarlo desde el panel. */
+  addAdhocBlock: (day: Date, startMin: number, durationMin: number, title?: string) => string;
+  /** Reubica bloques ya existentes sin recalcular colisiones: el plan ya viene sin choques. */
+  applyReorder: (day: Date, items: { blockId: string; startMin: number }[]) => void;
+  /** Mueve un bloque y arrastra con él a todos los que vengan después ese día. */
+  moveChain: (day: Date, blockId: string, newStartMin: number) => void;
+  /** Saca bloques de la agenda y devuelve su tarea a pendientes. */
+  unscheduleBlocks: (ids: string[]) => void;
   blockFromTask: (taskId: string, day: Date, startMin: number, durationMin?: number) => string | null;
   addBreak: (day: Date, startMin: number, durationMin: number) => string;
   updateBlock: (id: string, patch: Partial<Block>) => void;
   removeBlock: (id: string) => void;
   removeBlocks: (ids: string[]) => void;
+  removeSeries: (seriesId: string) => void;
+  /** Estira el bloque hacia arriba empujando lo de encima, sin pisarlo. */
+  resizeTop: (day: Date, id: string, newStartMin: number) => void;
   setDone: (id: string, done: boolean) => void;
+  /** Pendiente, completado u omitido. */
+  setStatus: (id: string, status: BlockStatus) => void;
   toggleDone: (id: string) => void;
+  setPinned: (ids: string[], pinned: boolean) => void;
   duplicateBlock: (id: string) => string | null;
   shiftBlocks: (ids: string[], deltaMin: number) => void;
   /** "Necesité más tiempo": cierra el original y agenda la continuación. */
@@ -131,7 +177,8 @@ function seed() {
     L(l3, 'Rutina', PALETTE[6], 2),
   ];
   const t = (listId: string, title: string, estimatedMin: number | null, recurring = false, order = 0): Task => ({
-    id: uid(), listId, title, estimatedMin, color: null, recurring, archived: false, notes: '', order,
+    id: uid(), listId, title, estimatedMin, color: null, recurring,
+    repeat: 'none', repeatUntil: null, archived: false, notes: '', order,
   });
   const tasks: Task[] = [
     t(l1, 'Foco profundo', 90, false, 0),
@@ -153,6 +200,7 @@ export const useStore = create<State>()(
       settings: DEFAULT_SETTINGS,
       view: 'week',
       cursor: dateKey(new Date()),
+      unsortedListId: null,
 
       setView: (view) => set({ view }),
       setCursor: (cursor) => set({ cursor }),
@@ -202,7 +250,7 @@ export const useStore = create<State>()(
             ...s.tasks,
             {
               id, listId, title, color: null,
-              recurring: false, archived: false, notes: '',
+              recurring: false, repeat: 'none', repeatUntil: null, archived: false, notes: '',
               order: s.tasks.filter((t) => t.listId === listId).length,
               ...opts,
               estimatedMin:
@@ -236,6 +284,23 @@ export const useStore = create<State>()(
           return { tasks: s.tasks.filter((t) => t.id !== id), blocks };
         }),
 
+      ensureUnsortedList: () => {
+        const s = get();
+        const found =
+          s.lists.find((l) => l.id === s.unsortedListId) ??
+          s.lists.find((l) => l.name === UNSORTED_NAME);
+        if (found) {
+          if (s.unsortedListId !== found.id) set({ unsortedListId: found.id });
+          return found.id;
+        }
+        const id = uid();
+        set((st) => ({
+          lists: [...st.lists, { id, name: UNSORTED_NAME, color: PALETTE[7], order: 999, collapsed: false }],
+          unsortedListId: id,
+        }));
+        return id;
+      },
+
       addBlock: (b) => {
         const id = uid();
         set((s) => {
@@ -250,25 +315,126 @@ export const useStore = create<State>()(
         const task = s.tasks.find((t) => t.id === taskId);
         if (!task) return null;
         const list = s.lists.find((l) => l.id === task.listId);
-        return s.addBlock({
+        const base = {
           taskId,
           title: task.title,
           color: task.color ?? list?.color ?? PALETTE[0],
-          startsAt: isoFor(day, startMin),
           durationMin: durationMin ?? task.estimatedMin ?? s.settings.defaultBlockMin,
-          kind: 'task',
-          status: 'planned',
+          kind: 'task' as const,
+          status: 'planned' as const,
           closedAt: null,
+          pinned: false,
           notes: '',
-        });
+        };
+
+        if (task.repeat === 'none') {
+          return s.addBlock({ ...base, startsAt: isoFor(day, startMin), seriesId: null });
+        }
+
+        // Materializamos la serie entera de una: es mucho más fácil de editar
+        // y de depurar que recalcular repeticiones al vuelo.
+        const seriesId = uid();
+        const dates = expandSeries(day, task.repeat, task.repeatUntil);
+        let firstId: string | null = null;
+        for (const d of dates) {
+          const id = get().addBlock({ ...base, startsAt: isoFor(d, startMin), seriesId });
+          if (!firstId) firstId = id;
+        }
+        return firstId;
       },
 
       addBreak: (day, startMin, durationMin) =>
         get().addBlock({
           taskId: null, title: 'Pausa', color: 'var(--muted)',
           startsAt: isoFor(day, startMin), durationMin,
-          kind: 'break', status: 'planned', closedAt: null, notes: '',
+          kind: 'break', status: 'planned', closedAt: null, pinned: false, seriesId: null, notes: '',
         }),
+
+      addAdhocBlock: (day, startMin, durationMin, title = 'Bloque') => {
+        const s = get();
+        const listId = s.ensureUnsortedList();
+        const color = get().lists.find((l) => l.id === listId)?.color ?? PALETTE[7];
+        const taskId = get().addTask(listId, title, { estimatedMin: durationMin });
+        return get().addBlock({
+          taskId, title, color,
+          startsAt: isoFor(day, startMin), durationMin,
+          kind: 'adhoc', status: 'planned', closedAt: null, pinned: false, seriesId: null, notes: '',
+        });
+      },
+
+      moveChain: (day, blockId, newStartMin) =>
+        set((s) => {
+          const anchor = s.blocks[blockId];
+          if (!anchor || anchor.pinned) return s;
+          const key = anchor.startsAt.slice(0, 10);
+          const oldStart = minutesOf(anchor.startsAt);
+
+          const dayBlocks = Object.values(s.blocks)
+            .filter((b) => b.startsAt.slice(0, 10) === key)
+            .sort((a, b) => minutesOf(a.startsAt) - minutesOf(b.startsAt));
+
+          // La cadena arranca en el bloque que agarraste y corta en el primer fijo:
+          // un bloque clavado parte el día en dos y nada lo cruza.
+          const chain: Block[] = [];
+          let started = false;
+          for (const b of dayBlocks) {
+            if (b.id === blockId) started = true;
+            if (!started) continue;
+            if (b.pinned) break;
+            chain.push(b);
+          }
+          if (!chain.length) return s;
+
+          // Topes: ni pisar el fijo de adelante ni el de atrás.
+          const chainStart = minutesOf(chain[0].startsAt);
+          const chainEnd = minutesOf(chain[chain.length - 1].startsAt) + chain[chain.length - 1].durationMin;
+          // Hacia atrás topamos contra cualquier bloque anterior, esté fijo o no:
+          // la cadena no incluye lo de antes, así que si no frenamos se solapan.
+          const inChain = new Set(chain.map((b) => b.id));
+          const before = dayBlocks.filter(
+            (b) => !inChain.has(b.id) && minutesOf(b.startsAt) + b.durationMin <= chainStart
+          );
+          const pinsAfter = dayBlocks.filter((b) => b.pinned && minutesOf(b.startsAt) >= chainEnd);
+          const floor = before.length
+            ? Math.max(...before.map((b) => minutesOf(b.startsAt) + b.durationMin))
+            : 0;
+          const ceil = pinsAfter.length ? Math.min(...pinsAfter.map((b) => minutesOf(b.startsAt))) : 24 * 60;
+
+          let delta = snap(newStartMin) - oldStart;
+          delta = Math.max(delta, floor - chainStart);
+          delta = Math.min(delta, ceil - chainEnd);
+          if (delta === 0) return s;
+
+          const blocks = { ...s.blocks };
+          for (const b of chain) {
+            blocks[b.id] = { ...b, startsAt: isoFor(day, Math.max(0, snap(minutesOf(b.startsAt) + delta))) };
+          }
+          return { blocks };
+        }),
+
+      applyReorder: (day, items) =>
+        set((s) => {
+          const blocks = { ...s.blocks };
+          for (const it of items) {
+            const b = blocks[it.blockId];
+            if (!b) continue;
+            blocks[it.blockId] = { ...b, startsAt: isoFor(day, snap(it.startMin)) };
+          }
+          return { blocks };
+        }),
+
+      unscheduleBlocks: (ids) => {
+        for (const id of ids) {
+          const b = get().blocks[id];
+          if (!b) continue;
+          // Un bloque suelto sin tarea detrás no puede volver a ningún lado: le creamos una.
+          if (!b.taskId) {
+            const listId = get().ensureUnsortedList();
+            get().addTask(listId, b.title, { estimatedMin: b.durationMin });
+          }
+          get().removeBlock(id);
+        }
+      },
 
       updateBlock: (id, patch) =>
         set((s) => {
@@ -298,6 +464,65 @@ export const useStore = create<State>()(
           return { blocks };
         }),
 
+      removeSeries: (seriesId) =>
+        set((s) => {
+          const blocks = { ...s.blocks };
+          for (const b of Object.values(s.blocks)) if (b.seriesId === seriesId) delete blocks[b.id];
+          return { blocks };
+        }),
+
+      resizeTop: (day, id, newStartMin) =>
+        set((s) => {
+          const b = s.blocks[id];
+          if (!b || b.pinned) return s;
+          const key = b.startsAt.slice(0, 10);
+          const end = minutesOf(b.startsAt) + b.durationMin;
+          const floor = s.settings.dayStartHour * 60;
+
+          const above = Object.values(s.blocks)
+            .filter((x) => x.startsAt.slice(0, 10) === key && x.id !== id)
+            .filter((x) => minutesOf(x.startsAt) < minutesOf(b.startsAt))
+            .sort((a, c) => minutesOf(c.startsAt) - minutesOf(a.startsAt));
+
+          /* Probamos un techo y vemos si lo de arriba entra empujado hacia arriba.
+             Si topa contra un fijo o contra el inicio de la jornada, cedemos nosotros. */
+          const simulate = (topMin: number) => {
+            const moves: { id: string; start: number }[] = [];
+            let ceiling = topMin;
+            for (const x of above) {
+              const xd = x.durationMin;
+              let xs = minutesOf(x.startsAt);
+              if (xs + xd > ceiling) {
+                if (x.pinned) return { blockedAt: xs + xd, moves, lowest: ceiling };
+                xs = snap(ceiling - xd);
+                moves.push({ id: x.id, start: xs });
+              }
+              ceiling = Math.min(ceiling, xs);
+            }
+            return { blockedAt: null as number | null, moves, lowest: ceiling };
+          };
+
+          let start = snap(clamp(newStartMin, floor, end - SLOT_MIN));
+          let sim = simulate(start);
+          if (sim.blockedAt !== null) {
+            start = snap(clamp(Math.max(start, sim.blockedAt), floor, end - SLOT_MIN));
+            sim = simulate(start);
+          }
+          if (sim.lowest < floor) {
+            start = snap(clamp(start + (floor - sim.lowest), floor, end - SLOT_MIN));
+            sim = simulate(start);
+          }
+          if (sim.blockedAt !== null) return s;
+
+          const blocks = { ...s.blocks };
+          blocks[id] = { ...b, startsAt: isoFor(day, start), durationMin: end - start };
+          for (const m of sim.moves) {
+            const x = blocks[m.id];
+            if (x) blocks[m.id] = { ...x, startsAt: isoFor(day, m.start) };
+          }
+          return { blocks };
+        }),
+
       setDone: (id, done) =>
         set((s) => {
           const b = s.blocks[id];
@@ -310,10 +535,29 @@ export const useStore = create<State>()(
           };
         }),
 
+      setStatus: (id, status) =>
+        set((s) => {
+          const b = s.blocks[id];
+          if (!b) return s;
+          return {
+            blocks: {
+              ...s.blocks,
+              [id]: { ...b, status, closedAt: status === 'planned' ? null : Date.now() },
+            },
+          };
+        }),
+
       toggleDone: (id) => {
         const b = get().blocks[id];
         if (b) get().setDone(id, b.status !== 'done');
       },
+
+      setPinned: (ids, pinned) =>
+        set((s) => {
+          const blocks = { ...s.blocks };
+          for (const id of ids) if (blocks[id]) blocks[id] = { ...blocks[id], pinned };
+          return { blocks };
+        }),
 
       duplicateBlock: (id) => {
         const s = get();
@@ -368,6 +612,8 @@ export const useStore = create<State>()(
             kind: 'task',
             status: 'planned',
             closedAt: null,
+            pinned: false,
+            seriesId: null,
             notes: '',
           });
         }
@@ -375,12 +621,14 @@ export const useStore = create<State>()(
     }),
     {
       name: 'tempo-v3',
-      version: 3,
+      version: 4,
       migrate: (persisted: any) => ({
         ...persisted,
         settings: {
           ...DEFAULT_SETTINGS,
           ...(persisted?.settings ?? {}),
+          // El default viejo era 30; ahora arranca en 10.
+          defaultBlockMin: persisted?.settings?.defaultBlockMin === 30 ? 10 : persisted?.settings?.defaultBlockMin ?? 10,
           autoplan: { ...DEFAULT_SETTINGS.autoplan, ...(persisted?.settings?.autoplan ?? {}) },
         },
       }),
@@ -426,10 +674,12 @@ interface UIStore {
   /** Bloques marcados con la herramienta de caja. */
   multi: string[];
   focusedBlockId: string | null;
+  focusedTaskId: string | null;
   setTool: (t: Tool) => void;
   setRange: (r: RangeSelection | null) => void;
   setMulti: (ids: string[]) => void;
   focusBlock: (id: string | null) => void;
+  focusTask: (id: string | null) => void;
   clearSelection: () => void;
 }
 
@@ -438,16 +688,18 @@ export const useUI = create<UIStore>((set) => ({
   range: null,
   multi: [],
   focusedBlockId: null,
+  focusedTaskId: null,
   setTool: (tool) => set({ tool, range: null, multi: [] }),
   setRange: (range) => set({ range, multi: [] }),
   setMulti: (multi) => set({ multi, range: null }),
-  focusBlock: (focusedBlockId) => set({ focusedBlockId }),
-  clearSelection: () => set({ range: null, multi: [], focusedBlockId: null }),
+  focusBlock: (focusedBlockId) => set({ focusedBlockId, focusedTaskId: null }),
+  focusTask: (focusedTaskId) => set({ focusedTaskId, focusedBlockId: null }),
+  clearSelection: () => set({ range: null, multi: [], focusedBlockId: null, focusedTaskId: null }),
 }));
 
 /* ---------- Arrastre (efímero) ---------- */
 
-export type DragMode = 'move' | 'resize' | 'range' | 'new' | 'box';
+export type DragMode = 'move' | 'resize' | 'resizeTop' | 'range' | 'new' | 'box';
 
 export interface DragState {
   mode: DragMode;

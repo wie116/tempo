@@ -28,6 +28,8 @@ create table if not exists tasks (
   -- null = hereda el color del grupo
   color text,
   is_recurring boolean not null default false,
+  repeat text not null default 'none' check (repeat in ('none','daily','weekly')),
+  repeat_until date,
   is_archived boolean not null default false,
   notes text not null default '',
   sort_order int not null default 0,
@@ -45,11 +47,20 @@ create table if not exists blocks (
   starts_at text not null,
   duration_min int not null check (duration_min >= 10),
   kind text not null default 'task' check (kind in ('task','break','adhoc')),
-  status text not null default 'planned' check (status in ('planned','done')),
+  status text not null default 'planned' check (status in ('planned','done','skipped')),
   closed_at bigint,
+  pinned boolean not null default false,
   notes text not null default '',
   updated_at timestamptz not null default now()
 );
+
+-- Para bases creadas antes de que existiera el candadito de bloque:
+alter table blocks add column if not exists pinned boolean not null default false;
+alter table blocks add column if not exists series_id uuid;
+alter table blocks drop constraint if exists blocks_status_check;
+alter table blocks add constraint blocks_status_check check (status in ('planned','done','skipped'));
+alter table tasks  add column if not exists repeat text not null default 'none';
+alter table tasks  add column if not exists repeat_until date;
 
 create index if not exists blocks_user_start_idx on blocks (user_id, starts_at);
 create index if not exists tasks_user_list_idx on tasks (user_id, list_id);

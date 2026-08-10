@@ -1,18 +1,23 @@
 import type { AutoplanConfig, Block, List, Task } from '../types';
 import { SLOT_MIN, minutesOf, snap } from './time';
 
-export interface PlanItem {
-  taskId: string;
+/** Algo que se puede acomodar: viene de una tarea pendiente o de un bloque ya agendado. */
+export interface PlanCandidate {
+  key: string;
+  taskId: string | null;
+  blockId: string | null;
   title: string;
   color: string;
-  startMin: number;
   durationMin: number;
+}
+
+export interface PlanItem extends PlanCandidate {
+  startMin: number;
 }
 
 export interface PlanResult {
   placed: PlanItem[];
-  /** Tareas que no entraron en ningún hueco. */
-  leftover: { taskId: string; title: string; durationMin: number; reason: string }[];
+  leftover: (PlanCandidate & { reason: string })[];
   freeMin: number;
 }
 
@@ -21,9 +26,9 @@ interface Gap {
   end: number;
 }
 
-/** Huecos libres del día, ya descontados los bloques existentes. */
-export function findGaps(dayBlocks: Block[], fromMin: number, untilMin: number): Gap[] {
-  const busy = dayBlocks
+/** Huecos libres, ya descontado todo lo que no se mueve. */
+export function findGaps(obstacles: Block[], fromMin: number, untilMin: number): Gap[] {
+  const busy = obstacles
     .map((b) => ({ start: minutesOf(b.startsAt), end: minutesOf(b.startsAt) + b.durationMin }))
     .filter((b) => b.end > fromMin)
     .sort((a, b) => a.start - b.start);
@@ -53,77 +58,92 @@ function shuffle<T>(arr: T[], seed: number): T[] {
   return a;
 }
 
+/** Candidatos a partir de las tareas que todavía no están en la agenda. */
+export function candidatesFromTasks(
+  tasks: Task[], lists: List[], scheduledTaskIds: Set<string>, cfg: AutoplanConfig
+): PlanCandidate[] {
+  const listOrder = new Map(lists.map((l) => [l.id, l.order]));
+  return tasks
+    .filter((t) => {
+      if (t.archived) return false;
+      if (cfg.listIds && !cfg.listIds.includes(t.listId)) return false;
+      if (scheduledTaskIds.has(t.id)) return false;
+      if (t.recurring && !cfg.includeRecurring) return false;
+      return true;
+    })
+    .sort((a, b) => (listOrder.get(a.listId) ?? 0) - (listOrder.get(b.listId) ?? 0) || a.order - b.order)
+    .map((t) => ({
+      key: t.id,
+      taskId: t.id,
+      blockId: null,
+      title: t.title,
+      color: t.color ?? lists.find((l) => l.id === t.listId)?.color ?? '#2F6F5E',
+      durationMin: Math.max(SLOT_MIN, snap(t.estimatedMin ?? cfg.defaultMin)),
+    }));
+}
+
 /**
- * Acomoda tareas pendientes en los huecos del día.
- * No mueve nada de lo que ya estaba: solo rellena.
+ * Candidatos a partir de los bloques que ya están en el día.
+ * Fijos: las pausas, lo completado y lo que clavaste con el candadito.
+ * Todo lo demás que siga pendiente se mueve,
+ * incluso si su horario ya pasó — justamente eso es lo que hay que reacomodar.
  */
+export function candidatesFromDay(dayBlocks: Block[], _fromMin: number): {
+  candidates: PlanCandidate[];
+  obstacles: Block[];
+} {
+  const candidates: PlanCandidate[] = [];
+  const obstacles: Block[] = [];
+
+  for (const b of [...dayBlocks].sort((a, c) => a.startsAt.localeCompare(c.startsAt))) {
+    const movable = b.kind !== 'break' && b.status === 'planned' && !b.pinned;
+    if (movable) {
+      candidates.push({
+        key: b.id, taskId: b.taskId, blockId: b.id,
+        title: b.title, color: b.color, durationMin: b.durationMin,
+      });
+    } else {
+      obstacles.push(b);
+    }
+  }
+  return { candidates, obstacles };
+}
+
+/** Acomoda los candidatos en los huecos. Nunca mueve un obstáculo. */
 export function autoplan(
-  tasks: Task[],
-  lists: List[],
-  dayBlocks: Block[],
-  scheduledTaskIds: Set<string>,
+  candidates: PlanCandidate[],
+  obstacles: Block[],
   cfg: AutoplanConfig,
   fromMin: number,
   seed = Date.now()
 ): PlanResult {
-  const listOrder = new Map(lists.map((l) => [l.id, l.order]));
-
-  let pool = tasks.filter((t) => {
-    if (t.archived) return false;
-    if (cfg.listIds && !cfg.listIds.includes(t.listId)) return false;
-    if (!t.recurring && scheduledTaskIds.has(t.id)) return false;
-    if (t.recurring && !cfg.includeRecurring) return false;
-    if (t.recurring && scheduledTaskIds.has(t.id)) return false;
-    return true;
-  });
-
-  const dur = (t: Task) => Math.max(SLOT_MIN, snap(t.estimatedMin ?? cfg.defaultMin));
+  let pool = [...candidates];
 
   switch (cfg.order) {
-    case 'random':
-      pool = shuffle(pool, seed);
-      break;
-    case 'longest':
-      pool = [...pool].sort((a, b) => dur(b) - dur(a));
-      break;
-    case 'shortest':
-      pool = [...pool].sort((a, b) => dur(a) - dur(b));
-      break;
-    default:
-      pool = [...pool].sort(
-        (a, b) => (listOrder.get(a.listId) ?? 0) - (listOrder.get(b.listId) ?? 0) || a.order - b.order
-      );
+    case 'random': pool = shuffle(pool, seed); break;
+    case 'longest': pool.sort((a, b) => b.durationMin - a.durationMin); break;
+    case 'shortest': pool.sort((a, b) => a.durationMin - b.durationMin); break;
+    default: break; // 'list' conserva el orden con el que llegaron
   }
 
-  const gaps = findGaps(dayBlocks, fromMin, cfg.untilMin).map((g) => ({ ...g }));
+  const gaps = findGaps(obstacles, fromMin, cfg.untilMin).map((g) => ({ ...g }));
   const freeMin = gaps.reduce((n, g) => n + (g.end - g.start), 0);
 
   const placed: PlanItem[] = [];
   const leftover: PlanResult['leftover'] = [];
 
-  for (const t of pool) {
-    const need = dur(t);
-    const list = lists.find((l) => l.id === t.listId);
-    // Primer hueco donde entre, sumando el aire configurado.
-    const g = gaps.find((x) => x.end - x.start >= need);
+  for (const c of pool) {
+    const g = gaps.find((x) => x.end - x.start >= c.durationMin);
     if (!g) {
       const biggest = gaps.reduce((m, x) => Math.max(m, x.end - x.start), 0);
       leftover.push({
-        taskId: t.id,
-        title: t.title,
-        durationMin: need,
+        ...c,
         reason: biggest === 0 ? 'No queda espacio libre' : `El hueco más grande es de ${biggest} min`,
       });
       continue;
     }
-    placed.push({
-      taskId: t.id,
-      title: t.title,
-      color: t.color ?? list?.color ?? '#2F6F5E',
-      startMin: g.start,
-      durationMin: need,
-    });
-    g.start = snap(g.start + need + cfg.gapMin);
+    placed.push({ ...c, startMin: g.start });
+    g.start = snap(g.start + c.durationMin + cfg.gapMin);
     if (g.end - g.start < SLOT_MIN) g.start = g.end;
   }
 

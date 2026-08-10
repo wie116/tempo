@@ -13,7 +13,7 @@ export function TodayModal({
   onAutoplan: () => void;
 }) {
   const blocks = useStore((s) => s.blocks);
-  const setDone = useStore((s) => s.setDone);
+  const setStatus = useStore((s) => s.setStatus);
   const now = useClock((s) => s.now);
 
   const stats = useMemo(() => computeStats(blocks, new Date(now)), [blocks, now]);
@@ -79,12 +79,15 @@ export function TodayModal({
                   >
                     {b.title}
                   </button>
+                  {b.status === 'skipped' && (
+                    <span className="shrink-0 text-[10px] text-muted">omitido</span>
+                  )}
                   {overdue && (
                     <span className="shrink-0 text-[10px]" style={{ color: 'var(--now)' }}>sin cerrar</span>
                   )}
                   {b.kind !== 'break' && (
                     <button
-                      onClick={() => setDone(b.id, b.status !== 'done')}
+                      onClick={() => setStatus(b.id, b.status === 'done' ? 'skipped' : b.status === 'skipped' ? 'planned' : 'done')}
                       aria-label="Alternar completado"
                       className="grid h-4 w-4 shrink-0 place-items-center rounded-full border"
                       style={{
@@ -136,9 +139,9 @@ export function TodayModal({
             note="Bloques que ya pasaron"
           />
           <Stat
-            label="Días con agenda"
-            value={String(stats.activeDays)}
-            note="Desde que usás Tempo"
+            label="Omitidos hoy"
+            value={String(stats.todaySkipped)}
+            note="Los marcaste como no hechos"
           />
         </div>
 

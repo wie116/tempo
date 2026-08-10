@@ -19,21 +19,20 @@ Abrí http://localhost:5173
 |---|---|
 | Agendar una tarea | Arrastrala del panel a la grilla |
 | Crear un bloque suelto | Arrastrá sobre un hueco vacío (o tocá, en móvil) |
-| Abrir un bloque | Un click corto encima |
+| Editar un bloque | El lápiz dentro del bloque, o doble clic |
+| Frenar una repetición | En cualquier bloque de la serie: "Dejar de repetir" (no borra lo ya agendado) |
+| Borrar una serie entera | En cualquier bloque de la serie: "Eliminar toda la serie" |
 | Mover un bloque | Arrastralo — se puede llevar a otro día |
-| Cambiar la duración | Estirá desde el borde de abajo (snap de 10 min) |
+| Mover el día entero | Activá el candado de la barra y arrastrá: los siguientes lo acompañan |
+| Clavar un bloque | El candadito dentro del bloque: queda fijo y corta la cadena |
+| Cambiar la duración | Estirá desde el borde de abajo o el de arriba (snap de 10 min) |
+| Repetir una tarea | Panel de tarea → pestaña *Repetición*: diaria o semanal, con fecha de fin |
 | Insertar una pausa | Marcá una franja vacía y elegí *Pausa* |
 | Marcar como hecho | Click en el círculo del bloque |
 | Administrar tareas | Botón *Tareas* o `L` |
 | Duración al escribir | `Reunión 45m` · `Leer 1h` · `* ` al final = recurrente |
 
-**Herramientas:** Seleccionar (`V`), Caja (`C`).
-**Vistas:** `D` día · `S` semana · `M` mes · `T` ir a hoy.
-**Editar:** `Supr` borra lo seleccionado.
-**Paneles:** `H` hoy · `L` tareas · `R` reloj · `,` ajustes.
-**Zoom:** `+` / `−`. `Esc` limpia la selección.
-
-Los atajos se desactivan solos mientras escribís en cualquier campo o modal.
+Atajos: `Ctrl+Z` deshace, `Ctrl+Shift+Z` rehace, `Supr` (o `Retroceso`), que borra lo seleccionado. Los atajos de una sola letra se sacaron porque se disparaban mientras escribías.
 
 ## Reglas de la agenda
 
@@ -42,8 +41,13 @@ Los atajos se desactivan solos mientras escribís en cualquier campo o modal.
 - **La jornada no se puede recortar** por encima de lo que ya agendaste: si tenés un bloque hasta las 23:00, Tempo no te deja terminar el día a las 22:00 y te dice por qué. Un bloque fuera de la grilla seguiría existiendo pero invisible, que es peor.
 - **Todo es múltiplo de 10 minutos**, siempre: el store redondea toda escritura, venga del arrastre, del modal o de una importación.
 - **El reloj corre siempre.** No hay botón de play: la agenda ya define los límites del día, así que Tempo solo mira el reloj de pared. El bloque en curso se va rellenando solo y la barra de abajo muestra cuánto le queda. Al empezar y al terminar cada bloque suena el aviso y aparece una tarjeta dentro de la app — nunca notificaciones del navegador.
+- **Tres estados por bloque:** pendiente, completado y **omitido**. Omitido significa "no lo hice": el bloque queda en su lugar, rayado y en gris, como registro de lo que habías planificado, y la tarea vuelve a estar disponible en su grupo. Se revierte con un clic.
 - **Los bloques se cierran a mano.** Cuando uno termina, Tempo pregunta: *Completado* o *Más tiempo*. La segunda opción cierra el original y agenda la continuación con la duración que le digas. Un bloque que pasó y sigue abierto se marca en el color de "ahora".
 - **Autoplan** acomoda tus pendientes en los huecos libres sin mover nada de lo que ya agendaste. La **varita** respeta el orden de tus listas; el **dado** lo mezcla. Es el mismo motor: misma configuración, mismo aviso de qué quedó afuera y por qué.
+- **Un clic en el panel de tareas no agenda nada.** Solo selecciona; para llevarla al día hay que arrastrarla hasta la grilla.
+- **Estirar hacia arriba empuja lo de encima**, en cascada, sin superponer ni borrar. Si topa contra un bloque fijo o contra el inicio de la jornada, cede el que estás estirando.
+- **Todo bloque tiene una tarea detrás.** Los que creás a mano en la grilla aparecen en el panel bajo **Sin clasificar**, así podés renombrarlos, darles color o volverlos recurrentes sin buscarlos en el calendario.
+- **La varita tiene dos modos.** *Bloques del día* reacomoda lo que ya agendaste, dejando fijas las pausas, lo completado y lo que ya arrancó; lo que no entra vuelve al panel como pendiente. *Tareas pendientes* sale a buscar trabajo nuevo y solo rellena huecos.
 - **Las tareas recurrentes (↻) no se gastan**: siguen disponibles al agendarlas y al completarlas.
 
 ## Cómo está armado

@@ -2,7 +2,10 @@ import { useMemo, useState } from 'react';
 import { useStore } from '../store';
 import { PALETTE } from '../lib/themes';
 import { durationLabel } from '../lib/time';
-import { Btn, ColorPicker, ConfirmModal, Field, Modal, NumField, inputCls } from './Modal';
+import { Btn, ColorPicker, ConfirmModal, Field, Modal, NumField, Segmented, Tabs, inputCls } from './Modal';
+import { UNTIL_PRESETS, countSeries } from '../lib/repeat';
+import { dateKey } from '../lib/time';
+import type { RepeatMode } from '../types';
 import type { Task } from '../types';
 
 export function TasksModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -186,107 +189,200 @@ function TaskRow({
   );
 }
 
-function TaskEditModal({
+export function TaskEditModal({
   id, onClose, onDelete,
-}: { id: string | null; onClose: () => void; onDelete: (id: string) => void }) {
+}: { id: string | null; onClose: () => void; onDelete?: (id: string) => void }) {
   const task = useStore((s) => (id ? s.tasks.find((t) => t.id === id) ?? null : null));
   const lists = useStore((s) => s.lists);
   const updateTask = useStore((s) => s.updateTask);
+  const removeTask = useStore((s) => s.removeTask);
+  const [tab, setTab] = useState<'general' | 'repeat'>('general');
+  const [askDelete, setAskDelete] = useState(false);
+
   if (!task) return null;
   const groupColor = lists.find((l) => l.id === task.listId)?.color ?? PALETTE[0];
 
   return (
-    <Modal
-      open
-      onClose={onClose}
-      title="Editar tarea"
-      size="sm"
-      footer={
-        <>
-          <Btn variant="danger" onClick={() => onDelete(task.id)}>Eliminar</Btn>
-          <Btn variant="primary" onClick={onClose}>Listo</Btn>
-        </>
-      }
-    >
-      <div className="space-y-4 p-5">
-        <Field label="Nombre">
-          <input
-            autoFocus
-            value={task.title}
-            onChange={(e) => updateTask(task.id, { title: e.target.value })}
-            className={inputCls}
-          />
-        </Field>
+    <>
+      <Modal
+        open
+        onClose={onClose}
+        title="Editar tarea"
+        size="sm"
+        footer={
+          <>
+            <Btn variant="danger" onClick={() => (onDelete ? onDelete(task.id) : setAskDelete(true))}>
+              Eliminar
+            </Btn>
+            <Btn variant="primary" onClick={onClose}>Listo</Btn>
+          </>
+        }
+      >
+        <Tabs
+          active={tab}
+          onChange={setTab}
+          tabs={[
+            { id: 'general' as const, label: 'General' },
+            { id: 'repeat' as const, label: 'Repetición' },
+          ]}
+        />
 
-        <Field label="Duración" hint="Dejalo vacío para que ocupe un bloque suelto y lo ajustes en la agenda.">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <NumField
-              value={task.estimatedMin}
-              onCommit={(v) => updateTask(task.id, { estimatedMin: v })}
-              allowEmpty
-              placeholder="libre"
-              suffix="min"
-            />
-            <span className="mx-1 h-4 w-px bg-[var(--border)]" />
-            {[null, 30, 60, 90].map((m, i) => (
-              <button
-                key={i}
-                onClick={() => updateTask(task.id, { estimatedMin: m })}
-                className="rounded-md border border-line px-2 py-1 font-mono text-[11px] text-muted hover:text-ink"
+        {tab === 'general' ? (
+          <div className="space-y-4 p-5">
+            <Field label="Nombre">
+              <input
+                autoFocus
+                value={task.title}
+                onChange={(e) => updateTask(task.id, { title: e.target.value })}
+                className={inputCls}
+              />
+            </Field>
+
+            <Field label="Duración" hint="Vacío = toma la duración por defecto y la ajustás en la agenda.">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <NumField
+                  value={task.estimatedMin}
+                  onCommit={(v) => updateTask(task.id, { estimatedMin: v })}
+                  allowEmpty
+                  placeholder="libre"
+                  suffix="min"
+                />
+                <span className="mx-1 h-4 w-px bg-[var(--border)]" />
+                {[null, 30, 60, 90].map((m, i) => (
+                  <button
+                    key={i}
+                    onClick={() => updateTask(task.id, { estimatedMin: m })}
+                    className="rounded-md border border-line px-2 py-1 font-mono text-[11px] text-muted hover:text-ink"
+                  >
+                    {m === null ? 'libre' : `${m}m`}
+                  </button>
+                ))}
+              </div>
+            </Field>
+
+            <Field label="Color de la etiqueta">
+              <ColorPicker
+                value={task.color}
+                onChange={(c) => updateTask(task.id, { color: c })}
+                palette={PALETTE}
+                allowInherit={groupColor}
+              />
+            </Field>
+
+            <Field label="Grupo">
+              <select
+                value={task.listId}
+                onChange={(e) => updateTask(task.id, { listId: e.target.value })}
+                className={inputCls}
               >
-                {m === null ? 'libre' : `${m}m`}
-              </button>
-            ))}
+                {lists.map((l) => (<option key={l.id} value={l.id}>{l.name}</option>))}
+              </select>
+            </Field>
+
+            <Field label="Notas">
+              <textarea
+                rows={3}
+                value={task.notes}
+                onChange={(e) => updateTask(task.id, { notes: e.target.value })}
+                placeholder="Detalles, links, contexto…"
+                className={`${inputCls} resize-y`}
+              />
+            </Field>
           </div>
-        </Field>
+        ) : (
+          <RepeatTab task={task} />
+        )}
+      </Modal>
 
-        <Field label="Color de la etiqueta">
-          <ColorPicker
-            value={task.color}
-            onChange={(c) => updateTask(task.id, { color: c })}
-            palette={PALETTE}
-            allowInherit={groupColor}
-          />
-        </Field>
+      {!onDelete && (
+        <ConfirmModal
+          open={askDelete}
+          onClose={() => setAskDelete(false)}
+          onConfirm={() => { removeTask(task.id); onClose(); }}
+          title="Eliminar tarea"
+          message={`Vas a eliminar "${task.title}".`}
+          detail="Se borran también todos sus bloques de la agenda. Esto no se puede deshacer."
+        />
+      )}
+    </>
+  );
+}
 
-        <Field label="Grupo">
-          <select
-            value={task.listId}
-            onChange={(e) => updateTask(task.id, { listId: e.target.value })}
-            className={inputCls}
-          >
-            {lists.map((l) => (
-              <option key={l.id} value={l.id}>{l.name}</option>
-            ))}
-          </select>
-        </Field>
+function RepeatTab({ task }: { task: Task }) {
+  const updateTask = useStore((s) => s.updateTask);
+  const today = new Date();
+  const n = task.repeat === 'none' ? 0 : countSeries(today, task.repeat, task.repeatUntil);
 
-        <label className="flex items-center gap-2.5 rounded-lg border border-line px-3 py-2.5">
-          <input
-            type="checkbox"
-            checked={task.recurring}
-            onChange={(e) => updateTask(task.id, { recurring: e.target.checked })}
-            className="h-4 w-4 accent-[var(--accent)]"
-          />
-          <span className="min-w-0">
-            <span className="block text-[13px]">Recurrente ↻</span>
-            <span className="block text-[11px] leading-snug text-muted">
-              No se gasta al agendarla ni al completarla.
-            </span>
+  return (
+    <div className="space-y-4 p-5">
+      <label className="flex items-start gap-2.5 rounded-lg border border-line px-3 py-2.5">
+        <input
+          type="checkbox"
+          checked={task.recurring}
+          onChange={(e) => updateTask(task.id, { recurring: e.target.checked })}
+          className="mt-0.5 h-4 w-4 accent-[var(--accent)]"
+        />
+        <span className="min-w-0">
+          <span className="block text-[13px]">Nunca se gasta ↻</span>
+          <span className="block text-[11px] leading-snug text-muted">
+            Sigue disponible en el panel aunque la agendes o la completes.
           </span>
-        </label>
+        </span>
+      </label>
 
-        <Field label="Notas">
-          <textarea
-            rows={3}
-            value={task.notes}
-            onChange={(e) => updateTask(task.id, { notes: e.target.value })}
-            placeholder="Detalles, links, contexto…"
-            className={`${inputCls} resize-y`}
-          />
-        </Field>
-      </div>
-    </Modal>
+      <Field label="Repetir al agendarla" hint="Al arrastrarla a un día se crea toda la serie de una vez.">
+        <Segmented
+          value={task.repeat}
+          onChange={(v) => updateTask(task.id, { repeat: v as RepeatMode })}
+          options={[
+            { id: 'none', label: 'No' },
+            { id: 'daily', label: 'Cada día' },
+            { id: 'weekly', label: 'Cada semana' },
+          ]}
+        />
+      </Field>
+
+      {task.repeat !== 'none' && (
+        <>
+          <Field label="Hasta cuándo">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {UNTIL_PRESETS.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => updateTask(task.id, { repeatUntil: dateKey(p.add(new Date())) })}
+                  className="rounded-md border border-line px-2.5 py-1.5 text-[12px] text-muted hover:text-ink"
+                >
+                  {p.label}
+                </button>
+              ))}
+              <button
+                onClick={() => updateTask(task.id, { repeatUntil: null })}
+                className="rounded-md border px-2.5 py-1.5 text-[12px]"
+                style={{
+                  borderColor: task.repeatUntil === null ? 'var(--accent)' : 'var(--border)',
+                  color: task.repeatUntil === null ? 'var(--text)' : 'var(--muted)',
+                }}
+              >
+                Siempre
+              </button>
+            </div>
+            <div className="mt-2">
+              <input
+                type="date"
+                value={task.repeatUntil ?? ''}
+                onChange={(e) => updateTask(task.id, { repeatUntil: e.target.value || null })}
+                className="rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 font-mono text-[13px] outline-none"
+              />
+            </div>
+          </Field>
+
+          <p className="rounded-lg border border-dashed border-line px-3 py-2.5 text-[11.5px] leading-snug text-muted">
+            Se van a crear <span className="font-semibold text-ink">{n} bloques</span> al agendarla.
+            {task.repeatUntil === null && ' "Siempre" llega hasta el tope del horizonte; cuando se acabe, volvés a arrastrarla.'}
+          </p>
+        </>
+      )}
+    </div>
   );
 }
 
