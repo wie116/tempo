@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useStore } from '../store';
+import { UNSORTED_NAME, useStore } from '../store';
 import { PALETTE } from '../lib/themes';
 import { durationLabel } from '../lib/time';
 import { Btn, ColorPicker, ConfirmModal, Field, Modal, NumField, Segmented, Tabs, inputCls } from './Modal';
@@ -10,6 +10,7 @@ export function TasksModal({ open, onClose }: { open: boolean; onClose: () => vo
   const tasks = useStore((s) => s.tasks);
   const addList = useStore((s) => s.addList);
   const addTask = useStore((s) => s.addTask);
+  const unsortedListId = useStore((s) => s.unsortedListId);
   const [activeList, setActiveList] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<string | null>(null);
   const [editingList, setEditingList] = useState<string | null>(null);
@@ -85,7 +86,7 @@ export function TasksModal({ open, onClose }: { open: boolean; onClose: () => vo
                 + Clasificación
               </button>
               {currentList && <button className="rounded-lg border border-line px-2 py-1.5 text-[12px] text-muted hover:text-ink" onClick={() => setEditingList(currentList.id)}>Editar</button>}
-              {currentList && sortedLists.length > 1 && (
+              {currentList && sortedLists.length > 1 && currentList.id !== unsortedListId && currentList.name !== UNSORTED_NAME && (
                 <button
                   onClick={() => setConfirm({ kind: 'list', id: currentList.id })}
                   aria-label="Eliminar clasificación"
@@ -346,7 +347,9 @@ function ListEditModal({
 }: { id: string | null; onClose: () => void; onDelete: (id: string) => void }) {
   const list = useStore((s) => (id ? s.lists.find((l) => l.id === id) ?? null : null));
   const updateList = useStore((s) => s.updateList);
+  const unsortedListId = useStore((s) => s.unsortedListId);
   if (!list) return null;
+  const protectedList = list.id === unsortedListId || list.name === UNSORTED_NAME;
 
   return (
     <Modal
@@ -356,7 +359,7 @@ function ListEditModal({
       size="sm"
       footer={
         <>
-          <Btn variant="danger" onClick={() => onDelete(list.id)}>Eliminar clasificación</Btn>
+          {!protectedList && <Btn variant="danger" onClick={() => onDelete(list.id)}>Eliminar clasificación</Btn>}
           <Btn variant="primary" onClick={onClose}>Listo</Btn>
         </>
       }

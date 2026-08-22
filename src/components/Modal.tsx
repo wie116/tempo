@@ -61,7 +61,14 @@ export function Modal({ open, onClose, title, subtitle, size = 'md', footer, chi
   return createPortal(
     <div
       className="scrim fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-6"
-      onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onPointerDown={(e) => {
+        // Los portales conservan la propagación por el árbol de React. Sin
+        // frenarla acá, un diálogo abierto desde un bloque puede activar el
+        // pointerdown de la grilla que está visualmente detrás.
+        e.stopPropagation();
+        if (e.target === e.currentTarget) onClose();
+      }}
+      onClick={(e) => e.stopPropagation()}
     >
       <div
         ref={panelRef}

@@ -180,6 +180,10 @@ export const useStore = create<State>()(
         set((s) => ({ lists: s.lists.map((l) => (l.id === id ? { ...l, ...patch } : l)) })),
       removeList: (id) =>
         set((s) => {
+          const target = s.lists.find((list) => list.id === id);
+          // Es el destino de seguridad para bloques y tareas creados sin una
+          // clasificación explícita; eliminarlo rompería ese flujo interno.
+          if (id === s.unsortedListId || target?.name === UNSORTED_NAME) return s;
           const removedTaskIds = new Set(s.tasks.filter((t) => t.listId === id).map((t) => t.id));
           const blocks = { ...s.blocks };
           for (const block of Object.values(blocks)) {
