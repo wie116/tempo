@@ -18,6 +18,12 @@ interface Props {
 
 function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount, onOpen }: Props) {
   const slotPx = useStore((s) => s.settings.slotPx);
+  const groupName = useStore((s) => {
+    if (block.source === 'google-calendar') return 'Google Calendar';
+    if (block.kind === 'break') return 'Pausa';
+    const task = block.taskId ? s.tasks.find((item) => item.id === block.taskId) : null;
+    return task ? s.lists.find((list) => list.id === task.listId)?.name ?? 'Sin clasificar' : 'Sin clasificar';
+  });
   const setPinned = useStore((s) => s.setPinned);
   const removeBlock = useStore((s) => s.removeBlock);
   const setStatus = useStore((s) => s.setStatus);
@@ -58,6 +64,8 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
   const readOnly = isReadOnlyBlock(block);
   const tiny = height < 32;
   const compact = height < 50;
+  const actionShelf = height >= 58;
+  const showNotes = height >= 92;
 
   const grab = (e: React.PointerEvent, mode: 'move' | 'resize' | 'resizeTop') => {
     if (tool === 'box') return; // en modo caja el gesto es para seleccionar
@@ -126,7 +134,7 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
       data-block-id={block.id}
       tabIndex={0}
       aria-pressed={selected}
-      aria-label={`${block.title}, ${hhmm(startMin)}, ${durationLabel(durationMin)}`}
+      aria-label={`${block.title}, clasificación ${groupName}, ${hhmm(startMin)}, ${durationLabel(durationMin)}`}
       onPointerDown={(e) => grab(e, 'move')}
       onDoubleClick={(e) => { e.stopPropagation(); onOpen(block.id); }}
       onKeyDown={(e) => {
@@ -176,28 +184,40 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
       {!isBreak && <span className="absolute inset-y-0 left-0 w-[3px]" style={{ background: block.color }} />}
       {live && <span className="absolute inset-x-0 top-0 h-[2px]" style={{ background: 'var(--now)' }} />}
 
-      <div className={`relative h-full pl-2.5 ${tiny ? 'flex items-center gap-1.5 pr-1.5' : 'pr-2 py-1'}`}>
+      <div className={`relative h-full pl-2.5 ${tiny ? 'flex items-center gap-1.5 pr-1.5' : `pr-2 py-1 ${actionShelf ? 'pb-8' : ''}`}`}>
         <p
           className={[
-            'min-w-0 flex-1 truncate pr-1 font-medium leading-tight',
+            'min-w-0 flex-1 truncate font-medium leading-tight',
+            tiny ? 'pr-1' : 'pr-7',
             tiny ? 'text-[11.5px]' : 'text-[14px]',
             done ? 'line-through' : '',
           ].join(' ')}
         >
           {block.icon && <span className="mr-1" aria-hidden>{block.icon}</span>}{block.title}
         </p>
-        {!tiny && block.notes.trim() && (
-          <p className="mt-0.5 truncate pr-8 text-[10.5px] leading-tight text-muted" title={block.notes}>
-            {block.notes}
-          </p>
-        )}
         {tiny && (
           <span className="tabular shrink-0 pr-5 font-mono text-[10px] text-muted">{hhmm(startMin)}</span>
         )}
-        {!compact && (
-          <p className="tabular mt-0.5 pr-8 font-mono text-[11px] text-muted">
-            {hhmm(startMin)}–{hhmm(startMin + durationMin)}
-            {overdue && <span style={{ color: 'var(--now)' }}> · sin cerrar</span>}
+        {!tiny && (
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 pr-8 text-[9.5px] leading-none text-muted">
+            <span
+              className="max-w-full truncate font-semibold uppercase tracking-[0.055em]"
+              title={`Clasificación: ${groupName}`}
+            >
+              {groupName}
+            </span>
+            {!compact && <span aria-hidden className="shrink-0 opacity-50">·</span>}
+            {!compact && (
+              <span className="tabular shrink-0 font-mono">
+                {hhmm(startMin)}–{hhmm(startMin + durationMin)}
+              </span>
+            )}
+            {overdue && <span className="shrink-0" style={{ color: 'var(--now)' }}>· sin cerrar</span>}
+          </div>
+        )}
+        {showNotes && block.notes.trim() && (
+          <p className="mt-1 truncate pr-8 text-[10.5px] leading-tight text-muted" title={block.notes}>
+            {block.notes}
           </p>
         )}
       </div>
@@ -245,7 +265,8 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
       {/* Candado, tachito y lápiz: flotan encima, solo al pasar el mouse o si está enfocado. */}
       {!readOnly && <div
         className={[
-          'absolute right-1 top-7 z-[55] flex items-center gap-1 rounded-lg p-0.5 backdrop-blur-sm transition-opacity',
+          'absolute right-1 z-[55] flex items-center gap-1 rounded-lg p-0.5 backdrop-blur-sm transition-opacity',
+          actionShelf ? 'bottom-1' : 'top-7',
           focused ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100',
         ].join(' ')}
         style={{ background: 'color-mix(in oklab, var(--surface) 88%, transparent)', boxShadow: '0 1px 3px rgb(0 0 0 / .12)' }}

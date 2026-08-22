@@ -13,6 +13,12 @@ const ICONS = ['🎓', '📝', '📞', '💪', '🧘', '🚗', '💡', '⭐', '�
 export function BlockModal({ id, onClose }: { id: string | null; onClose: () => void }) {
   const block = useStore((s) => (id ? s.blocks[id] ?? null : null));
   const task = useStore((s) => (block?.taskId ? s.tasks.find((t) => t.id === block.taskId) ?? null : null));
+  const groupName = useStore((s) => {
+    if (block?.source === 'google-calendar') return 'Google Calendar';
+    if (block?.kind === 'break') return 'Pausa';
+    const sourceTask = block?.taskId ? s.tasks.find((item) => item.id === block.taskId) : null;
+    return sourceTask ? s.lists.find((list) => list.id === sourceTask.listId)?.name ?? 'Sin clasificar' : 'Sin clasificar';
+  });
   const updateBlock = useStore((s) => s.updateBlock);
   const removeBlock = useStore((s) => s.removeBlock);
   const removeSeries = useStore((s) => s.removeSeries);
@@ -48,12 +54,12 @@ export function BlockModal({ id, onClose }: { id: string | null; onClose: () => 
 
   return <>
     <Modal open onClose={onClose} title={isBreak ? 'Pausa' : `${block.icon ? `${block.icon} ` : ''}${block.title || 'Bloque'}`}
-      subtitle={`${fmt(day, "EEEE d 'de' LLLL")} · ${hhmm(start)}–${hhmm(start + block.durationMin)}`} size="sm"
+      subtitle={`${fmt(day, "EEEE d 'de' LLLL")} · ${hhmm(start)}–${hhmm(start + block.durationMin)} · ${groupName}`} size="sm"
       footer={<><Btn variant="danger" onClick={() => { removeBlock(block.id); onClose(); }}>Eliminar esta</Btn>
         <Btn onClick={() => { duplicateBlock(block.id); onClose(); }}>Duplicar</Btn><Btn variant="primary" onClick={onClose}>Listo</Btn></>}>
       <Tabs active={tab} onChange={setTab} tabs={[
         { id: 'general' as const, label: 'General' }, { id: 'details' as const, label: 'Comentario' },
-        ...(!isBreak ? [{ id: 'repeat' as const, label: block.seriesId ? 'Serie' : 'Repetir' }] : []),
+        { id: 'repeat' as const, label: block.seriesId ? 'Serie' : 'Repetir' },
       ]} />
 
       {tab === 'general' && <div className="space-y-4 p-5">
@@ -82,8 +88,8 @@ export function BlockModal({ id, onClose }: { id: string | null; onClose: () => 
         ]} /></Field>
       </div>}
 
-      {tab === 'repeat' && !isBreak && <div className="space-y-4 p-5">
-        <Field label="Frecuencia" hint="La repetición pertenece a este evento, no a la tarea de la lista."><Segmented value={repeat} onChange={(v) => setRule(v as RepeatMode)} options={[
+      {tab === 'repeat' && <div className="space-y-4 p-5">
+        <Field label="Frecuencia" hint={isBreak ? 'La repetición pertenece a esta pausa de la agenda.' : 'La repetición pertenece a este evento, no a la tarea de la lista.'}><Segmented value={repeat} onChange={(v) => setRule(v as RepeatMode)} options={[
           { id: 'none', label: 'No' }, { id: 'daily', label: 'Diaria' }, { id: 'weekly', label: 'Semanal' }, { id: 'monthly', label: 'Mensual' }, { id: 'yearly', label: 'Anual' },
         ]} /></Field>
         {repeat === 'weekly' && <Field label="Días de la semana"><div className="flex flex-wrap gap-1.5">{WEEKDAY_LABELS.map((label, i) => {
@@ -95,13 +101,13 @@ export function BlockModal({ id, onClose }: { id: string | null; onClose: () => 
           <input type="date" value={until ?? ''} onChange={(e) => setRule(repeat, e.target.value || null, weekdays)} className={`${inputCls} mt-2 font-mono`} />
           <p className="mt-2 text-[11px] text-muted">{countSeries(day, repeat, until, weekdays)} ocurrencias previstas. Si existe un conflicto, Tempo busca el hueco libre más cercano.</p></Field>}
         {block.seriesId && <div className="rounded-xl border border-line bg-surface-2 p-3"><p className="text-[12px] font-semibold">Cambios de esta ocurrencia</p>
-          <p className="mt-1 text-[11px] text-muted">Título, ícono, comentario, color, duración y hora pueden propagarse.</p>
+          <p className="mt-1 text-[11px] text-muted">{isBreak ? 'Comentario, duración y hora pueden propagarse.' : 'Título, ícono, comentario, color, duración y hora pueden propagarse.'}</p>
           <div className="mt-2 grid gap-2 sm:grid-cols-2"><Btn onClick={() => applyBlockToSeries(block.id, 'future')}>Aplicar desde hoy</Btn><Btn onClick={() => applyBlockToSeries(block.id, 'all')}>Aplicar a todas</Btn></div>
           <div className="mt-2 grid gap-2 sm:grid-cols-2"><Btn variant="danger" onClick={() => setConfirm('future')}>Borrar desde hoy</Btn><Btn variant="danger" onClick={() => setConfirm('all')}>Borrar toda la serie</Btn></div></div>}
       </div>}
     </Modal>
     <ConfirmModal open={confirm !== null} onClose={() => setConfirm(null)} onConfirm={() => { if (!block.seriesId) return; confirm === 'all' ? removeSeries(block.seriesId) : removeSeriesFrom(block.seriesId, block.startsAt); onClose(); }}
       title={confirm === 'all' ? 'Eliminar toda la serie' : 'Eliminar desde esta fecha'} message={confirm === 'all' ? `Se borrarán todas las ocurrencias de “${block.title}”.` : `Se borrará “${block.title}” desde esta ocurrencia en adelante.`}
-      detail="La tarea plantilla seguirá disponible en su clasificación." />
+      detail={isBreak ? 'Las pausas eliminadas no podrán recuperarse.' : 'La tarea plantilla seguirá disponible en su clasificación.'} />
   </>;
 }

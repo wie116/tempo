@@ -450,7 +450,7 @@ export const useStore = create<State>()(
       setBlockRecurrence: (id, repeat, until, weekdays) => {
         const initial = get();
         const anchor = initial.blocks[id];
-        if (!anchor || isReadOnlyBlock(anchor) || anchor.kind === 'break') return;
+        if (!anchor || isReadOnlyBlock(anchor)) return;
         const oldSeriesId = anchor.seriesId;
         const seriesId = repeat === 'none' ? null : oldSeriesId ?? uid();
         const blocks = { ...initial.blocks };
