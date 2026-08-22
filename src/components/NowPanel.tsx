@@ -240,49 +240,58 @@ export function NowPanel({
 
         {clockStyle === 'focus' && (
           <div
-            className="mx-auto w-full overflow-hidden border-y border-line px-1 py-4"
-            style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
+            className="mx-auto flex overflow-hidden border-y border-line px-1 py-4"
+            style={{ width: SIZE, height: SIZE }}
           >
-            <div className="flex items-baseline justify-between gap-3">
-              <p className="text-[10px] uppercase tracking-[0.16em] text-muted">Ahora</p>
-              <p className="tabular text-[16px] font-semibold">
-                {pad(d.getHours())}:{pad(d.getMinutes())}<span className="ml-0.5 text-[10px] font-normal text-muted">:{pad(d.getSeconds())}</span>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted">Ahora</p>
+              <p
+                className="tabular mt-1 whitespace-nowrap text-[39px] font-semibold leading-none tracking-[-0.035em]"
+                style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
+              >
+                {pad(d.getHours())}:{pad(d.getMinutes())}<span className="ml-1 text-[14px] font-normal text-muted">:{pad(d.getSeconds())}</span>
               </p>
-            </div>
-            <p className="mt-4 truncate text-[12px] italic text-muted">
-              {current ? (isBreak ? 'Pausa' : current.title) : 'Sin tarea en curso'}
-            </p>
-            <div className="mt-1 flex items-end justify-between gap-3">
-              <p className="text-[9.5px] uppercase tracking-[0.14em] text-muted">Tiempo restante</p>
-              <p className="tabular text-[42px] font-bold leading-none tracking-[-0.04em]" style={{ color: current ? ring : 'var(--muted)' }}>
-                {current ? `${pad(remaining / 60)}:${pad(remaining % 60)}` : '—:—'}
+
+              <p className="mt-3 truncate text-[12px] font-medium text-muted">
+                {current ? (isBreak ? 'Pausa' : current.title) : 'Sin tarea en curso'}
               </p>
-            </div>
-            <div className="relative mt-5 h-px bg-[var(--grid-line-strong)]">
-              <div className="absolute inset-y-0 left-0 h-[3px] -translate-y-px transition-[width] duration-700" style={{ width: `${blockProgress * 100}%`, background: ring }} />
-              <span className="absolute -top-[3px] h-[7px] w-[7px] -translate-x-1/2 rounded-full transition-[left] duration-700" style={{ left: `${blockProgress * 100}%`, background: current ? ring : 'var(--border)' }} />
-            </div>
-            <div className="mt-2 flex justify-between text-[9.5px] text-muted">
-              <span>{current ? hhmm(start) : 'Inicio'}</span>
-              <span>{current ? hhmm(start + current.durationMin) : 'Fin'}</span>
+
+              <div className="mt-auto">
+                <div className="flex items-end justify-between gap-3">
+                  <p className="text-[9px] uppercase tracking-[0.14em] text-muted">Restante</p>
+                  <p className="tabular font-mono text-[20px] font-semibold leading-none" style={{ color: current ? ring : 'var(--muted)' }}>
+                    {current ? `${pad(remaining / 60)}:${pad(remaining % 60)}` : '—:—'}
+                  </p>
+                </div>
+                <div className="relative mt-3 h-px bg-[var(--grid-line-strong)]">
+                  <div className="absolute inset-y-0 left-0 h-[3px] -translate-y-px transition-[width] duration-700" style={{ width: `${blockProgress * 100}%`, background: ring }} />
+                  <span className="absolute -top-[3px] h-[7px] w-[7px] -translate-x-1/2 rounded-full transition-[left] duration-700" style={{ left: `${blockProgress * 100}%`, background: current ? ring : 'var(--border)' }} />
+                </div>
+                <div className="mt-2 flex justify-between text-[9.5px] text-muted">
+                  <span>{current ? hhmm(start) : 'Inicio'}</span>
+                  <span>{current ? hhmm(start + current.durationMin) : 'Fin'}</span>
+                </div>
+              </div>
             </div>
           </div>
         )}
 
         {clockStyle === 'stats' && (
-          <div className="mx-auto w-full overflow-hidden rounded-2xl border border-[#26352f] bg-[#0b1110] p-4 text-[#b9ffd7] shadow-inner">
-            <div className="flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.16em] text-[#68a982]">
+          <div
+            className="mx-auto overflow-hidden rounded-2xl border border-line bg-surface-2 p-4 shadow-inner"
+            style={{ width: SIZE, height: SIZE }}
+          >
+            <div className="font-mono text-[9px] uppercase tracking-[0.16em] text-muted">
               <span>{current ? 'En curso' : 'Sin bloque'}</span>
-              <span className="inline-flex items-center gap-1.5"><i className="h-1.5 w-1.5 rounded-full bg-[#7dffad] shadow-[0_0_7px_#7dffad]" /> Live</span>
             </div>
-            <p className="tabular mt-2 whitespace-nowrap font-mono text-[35px] font-bold leading-none tracking-[-0.07em] text-[#d7ffe6]">
-              {pad(d.getHours())}:{pad(d.getMinutes())}<span className="ml-1 text-[17px] font-medium text-[#68a982]">:{pad(d.getSeconds())}</span>
+            <p className="tabular mt-2 whitespace-nowrap font-mono text-[35px] font-bold leading-none tracking-[-0.07em] text-ink">
+              {pad(d.getHours())}:{pad(d.getMinutes())}<span className="ml-1 text-[17px] font-medium text-muted">:{pad(d.getSeconds())}</span>
             </p>
-            <div className="mt-4 border-t border-[#26352f] pt-3 font-mono">
-              <p className="truncate text-[10px] uppercase tracking-[0.13em] text-[#68a982]">{current ? (isBreak ? 'Pausa' : current.title) : 'Esperando próxima tarea'}</p>
+            <div className="mt-4 border-t border-line pt-3 font-mono">
+              <p className="truncate text-[10px] uppercase tracking-[0.13em] text-muted">{current ? (isBreak ? 'Pausa' : current.title) : 'Esperando próxima tarea'}</p>
               <div className="mt-1 flex items-end justify-between gap-2">
-                <span className="text-[9px] uppercase text-[#49765d]">Restan</span>
-                <span className="tabular text-[25px] font-bold leading-none" style={{ color: current ? 'color-mix(in oklab, #b9ffd7 74%, white)' : '#49765d' }}>
+                <span className="text-[9px] uppercase text-muted">Restan</span>
+                <span className="tabular text-[25px] font-bold leading-none" style={{ color: current ? 'var(--accent)' : 'var(--muted)' }}>
                   {current ? `${pad(remaining / 60)}:${pad(remaining % 60)}` : '--:--'}
                 </span>
               </div>
@@ -290,10 +299,10 @@ export function NowPanel({
             <div className="mt-4 grid grid-cols-12 gap-1" aria-label={`${Math.round(blockProgress * 100)}% completado`}>
               {Array.from({ length: 12 }, (_, i) => {
                 const active = i < Math.round(blockProgress * 12);
-                return <span key={i} className="h-3 rounded-[2px] transition-colors" style={{ background: active ? '#7dffad' : '#1d2b26', boxShadow: active ? '0 0 5px rgb(125 255 173 / .35)' : undefined }} />;
+                return <span key={i} className="h-3 rounded-[2px] transition-colors" style={{ background: active ? 'var(--accent)' : 'var(--grid-line-strong)', boxShadow: active ? '0 0 5px color-mix(in oklab, var(--accent) 40%, transparent)' : undefined }} />;
               })}
             </div>
-            <div className="mt-1.5 flex justify-between font-mono text-[8.5px] uppercase tracking-wider text-[#49765d]"><span>Inicio</span><span>{Math.round(blockProgress * 100)}%</span><span>Fin</span></div>
+            <div className="mt-1.5 flex justify-between font-mono text-[8.5px] uppercase tracking-wider text-muted"><span>Inicio</span><span>{Math.round(blockProgress * 100)}%</span><span>Fin</span></div>
           </div>
         )}
 
