@@ -263,23 +263,42 @@ export function NowPanel({
         )}
 
         {clockStyle === 'stats' && (
-          <div className="mx-auto min-h-[208px] w-full rounded-3xl border border-line bg-surface-2 p-4">
-            <div className="flex items-end justify-between border-b border-line pb-3">
-              <div>
-                <p className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-muted">Hora actual</p>
-                <p className="tabular mt-1 font-mono text-[30px] font-bold leading-none">{pad(d.getHours())}:{pad(d.getMinutes())}</p>
+          <div className="mx-auto w-full overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
+            <div className="px-4 pb-4 pt-3.5" style={{ background: 'linear-gradient(135deg, var(--accent), color-mix(in oklab, var(--accent) 72%, #18251f))', color: 'var(--accent-fg)' }}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[9.5px] font-semibold uppercase tracking-[0.16em] opacity-75">Resumen de hoy</p>
+                  <p className="tabular mt-1 font-mono text-[28px] font-bold leading-none">{pad(d.getHours())}:{pad(d.getMinutes())}</p>
+                </div>
+                <div className="text-right">
+                  <p className="tabular font-mono text-[26px] font-bold leading-none">
+                    {scheduledMin ? Math.round(completedMin / scheduledMin * 100) : 0}%
+                  </p>
+                  <p className="mt-1 text-[9.5px] opacity-75">del plan completado</p>
+                </div>
               </div>
-              <p className="text-right text-[11px] text-muted">{current ? `${Math.round(blockProgress * 100)}% del bloque actual` : 'Sin bloque en curso'}</p>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/20">
+                <div className="h-full rounded-full bg-white transition-[width] duration-700" style={{ width: `${scheduledMin ? Math.min(100, completedMin / scheduledMin * 100) : 0}%` }} />
+              </div>
             </div>
-            <div className="grid grid-cols-3 gap-2 pt-4 text-center">
-              <div><p className="font-mono text-[20px] font-bold">{durationLabel(scheduledMin)}</p><p className="text-[9.5px] text-muted">planificado</p></div>
-              <div><p className="font-mono text-[20px] font-bold">{completedCount}</p><p className="text-[9.5px] text-muted">completados</p></div>
-              <div><p className="font-mono text-[20px] font-bold">{pendingCount}</p><p className="text-[9.5px] text-muted">pendientes</p></div>
+
+            <div className="divide-y divide-[var(--border)] px-4 py-1">
+              <div className="flex items-center justify-between py-2.5">
+                <div><p className="text-[12px] font-medium">Tiempo planificado</p><p className="text-[10px] text-muted">Total de bloques de trabajo de hoy</p></div>
+                <p className="tabular font-mono text-[16px] font-bold">{durationLabel(scheduledMin)}</p>
+              </div>
+              <div className="flex items-center justify-between py-2.5">
+                <div><p className="text-[12px] font-medium">Trabajo completado</p><p className="text-[10px] text-muted">{completedCount} {completedCount === 1 ? 'bloque cerrado' : 'bloques cerrados'}</p></div>
+                <p className="tabular font-mono text-[16px] font-bold" style={{ color: 'var(--accent)' }}>{durationLabel(completedMin)}</p>
+              </div>
+              <div className="flex items-center justify-between py-2.5">
+                <div><p className="text-[12px] font-medium">Todavía pendientes</p><p className="text-[10px] text-muted">Bloques que siguen abiertos</p></div>
+                <span className="grid h-7 min-w-7 place-items-center rounded-full px-2 font-mono text-[13px] font-bold"
+                  style={{ background: pendingCount ? 'color-mix(in oklab, var(--now) 16%, transparent)' : 'var(--surface-2)', color: pendingCount ? 'var(--now)' : 'var(--muted)' }}>
+                  {pendingCount}
+                </span>
+              </div>
             </div>
-            <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[var(--grid-line-strong)]">
-              <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${scheduledMin ? Math.min(100, completedMin / scheduledMin * 100) : 0}%` }} />
-            </div>
-            <p className="mt-1.5 text-center text-[10px] text-muted">{durationLabel(completedMin)} completados de {durationLabel(scheduledMin)}</p>
           </div>
         )}
 

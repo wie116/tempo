@@ -338,6 +338,23 @@ export function Calendar({
         <div className="flex flex-1">
           {days.map((d) => {
             const today = isSameDay(d, nowDate);
+            const dayView = days.length === 1;
+            if (dayView) {
+              return (
+                <div key={d.toISOString()} className="flex-1 px-2 py-2.5 text-center">
+                  <div
+                    className="mx-auto flex max-w-sm items-center justify-center gap-2 rounded-xl px-4 py-2"
+                    style={today
+                      ? { background: 'var(--accent)', color: 'var(--accent-fg)', boxShadow: '0 5px 14px color-mix(in oklab, var(--accent) 24%, transparent)' }
+                      : { background: 'var(--surface-2)', color: 'var(--text)' }}
+                  >
+                    <p className="text-[15px] font-semibold capitalize tracking-tight">{fmt(d, 'EEEE')}</p>
+                    <span className="h-4 w-px bg-current opacity-30" />
+                    <p className="tabular font-mono text-[17px] font-bold">{fmt(d, "d 'de' LLLL")}</p>
+                  </div>
+                </div>
+              );
+            }
             return (
               <div key={d.toISOString()} className="flex-1 px-1 py-2 text-center">
                 <p className="text-[9.5px] uppercase tracking-[0.16em] text-muted">{fmt(d, 'EEE')}</p>
