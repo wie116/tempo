@@ -65,7 +65,7 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
   const tiny = height < 32;
   const compact = height < 50;
   const actionShelf = height >= 58;
-  const showNotes = height >= 92;
+  const showNotes = height >= 112;
 
   const grab = (e: React.PointerEvent, mode: 'move' | 'resize' | 'resizeTop') => {
     if (tool === 'box') return; // en modo caja el gesto es para seleccionar
@@ -199,20 +199,24 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
           <span className="tabular shrink-0 pr-5 font-mono text-[10px] text-muted">{hhmm(startMin)}</span>
         )}
         {!tiny && (
-          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 pr-8 text-[9.5px] leading-none text-muted">
-            <span
-              className="max-w-full truncate font-semibold uppercase tracking-[0.055em]"
+          <div className="mt-0.5 min-w-0 space-y-[3px] pr-8 text-[9.5px] leading-none text-muted">
+            <p
+              className="truncate font-semibold uppercase tracking-[0.055em]"
               title={`Clasificación: ${groupName}`}
             >
               {groupName}
-            </span>
-            {!compact && <span aria-hidden className="shrink-0 opacity-50">·</span>}
+            </p>
             {!compact && (
-              <span className="tabular shrink-0 font-mono">
+              <p className="tabular truncate font-mono" title={`${hhmm(startMin)}–${hhmm(startMin + durationMin)}`}>
                 {hhmm(startMin)}–{hhmm(startMin + durationMin)}
-              </span>
+              </p>
             )}
-            {overdue && <span className="shrink-0" style={{ color: 'var(--now)' }}>· sin cerrar</span>}
+            {!compact && (
+              <p className="tabular truncate font-mono">
+                {durationMin} min
+                {overdue && <span style={{ color: 'var(--now)' }}> · sin cerrar</span>}
+              </p>
+            )}
           </div>
         )}
         {showNotes && block.notes.trim() && (
