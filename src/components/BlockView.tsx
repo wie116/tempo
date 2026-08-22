@@ -1,18 +1,22 @@
-import { memo, useRef } from 'react';
+import { memo, useState } from 'react';
 import type { Block } from '../types';
 import { useClock, useDrag, useStore, useUI } from '../store';
-import { durationLabel, hhmm, minToPx, minutesOf } from '../lib/time';
+import { clamp, durationLabel, hhmm, minToPx, minutesOf, pxToMin } from '../lib/time';
 import { startPointerGesture } from '../lib/gesture';
+import { isReadOnlyBlock } from '../lib/planning';
+import { ConfirmModal } from './Modal';
 
 interface Props {
   block: Block;
   dayIndex: number;
   dayStartMin: number;
   isToday: boolean;
+  lane: number;
+  laneCount: number;
   onOpen: (id: string) => void;
 }
 
-function BlockViewInner({ block, dayIndex, dayStartMin, isToday, onOpen }: Props) {
+function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount, onOpen }: Props) {
   const slotPx = useStore((s) => s.settings.slotPx);
   const setPinned = useStore((s) => s.setPinned);
   const removeBlock = useStore((s) => s.removeBlock);
@@ -21,15 +25,26 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, onOpen }: Props
   const selected = useUI((s) => s.multi.includes(block.id));
   const focused = useUI((s) => s.focusedBlockId === block.id);
   const focusBlock = useUI((s) => s.focusBlock);
+  const setMulti = useUI((s) => s.setMulti);
   const begin = useDrag((s) => s.begin);
-  const preview = useDrag((s) => (s.drag?.blockId === block.id ? s.drag : null));
+  const activeDrag = useDrag((s) => s.drag);
+  const anchorBlock = useStore((s) => activeDrag?.blockId ? s.blocks[activeDrag.blockId] ?? null : null);
+  const preview = activeDrag?.blockId === block.id || (
+    activeDrag?.mode === 'move' && activeDrag.groupIds?.includes(block.id) && activeDrag.dayIndex === activeDrag.anchorDayIndex
+  ) ? activeDrag : null;
   const now = useClock((s) => s.now);
-  const down = useRef<{ x: number; y: number; t: number } | null>(null);
+  const [askDelete, setAskDelete] = useState(false);
 
-  const startMin = preview ? preview.startMin : minutesOf(block.startsAt);
-  const durationMin = preview ? preview.durationMin : block.durationMin;
-  const top = minToPx(startMin - dayStartMin, slotPx);
-  const height = minToPx(durationMin, slotPx);
+  const isAnchorPreview = preview?.blockId === block.id;
+  const anchorOriginalMin = anchorBlock ? minutesOf(anchorBlock.startsAt) : 0;
+  const groupDelta = preview && !isAnchorPreview ? preview.startMin - anchorOriginalMin : 0;
+  const groupVisualDelta = preview && !isAnchorPreview ? (preview.visualStartMin ?? preview.startMin) - anchorOriginalMin : 0;
+  const startMin = preview ? (isAnchorPreview ? preview.startMin : minutesOf(block.startsAt) + groupDelta) : minutesOf(block.startsAt);
+  const durationMin = preview && isAnchorPreview ? preview.durationMin : block.durationMin;
+  const visualStartMin = preview ? (isAnchorPreview ? preview.visualStartMin ?? startMin : minutesOf(block.startsAt) + groupVisualDelta) : startMin;
+  const visualDurationMin = preview && isAnchorPreview ? preview.visualDurationMin ?? durationMin : durationMin;
+  const top = minToPx(visualStartMin - dayStartMin, slotPx);
+  const height = minToPx(visualDurationMin, slotPx);
 
   const d = new Date(now);
   const nowMin = d.getHours() * 60 + d.getMinutes();
@@ -40,62 +55,92 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, onOpen }: Props
   const isBreak = block.kind === 'break';
   const done = block.status === 'done';
   const skipped = block.status === 'skipped';
+  const readOnly = isReadOnlyBlock(block);
   const tiny = height < 32;
   const compact = height < 50;
 
   const grab = (e: React.PointerEvent, mode: 'move' | 'resize' | 'resizeTop') => {
     if (tool === 'box') return; // en modo caja el gesto es para seleccionar
-    if (block.pinned) { e.stopPropagation(); focusBlock(block.id); return; } // fijo es fijo
+    if (block.pinned || readOnly) { e.stopPropagation(); focusBlock(block.id); return; }
     e.stopPropagation();
-    focusBlock(block.id);
-    down.current = null;
-
+    const modifier = e.ctrlKey || e.metaKey;
+    // React limpia currentTarget al terminar este handler. El gesto recién se
+    // convierte en drag unos píxeles después, así que capturamos la geometría
+    // ahora y no dependemos del SyntheticEvent diferido.
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const pointerDownY = e.clientY;
+    const grabOffsetMin = mode === 'move'
+      ? clamp(pxToMin(pointerDownY - rect.top, slotPx), 0, Math.max(0, durationMin - 1))
+      : 0;
     startPointerGesture(e, {
-      onDrag: () => {
-        // Con mouse todavía distinguimos clic de arrastre por desplazamiento;
-        // con el dedo ya lo resolvió la pulsación sostenida.
-        down.current =
-          e.pointerType !== 'touch' && mode === 'move'
-            ? { x: e.clientX, y: e.clientY, t: Date.now() }
-            : null;
+      onDrag: (pointer) => {
+        // La selección puede haber cambiado apenas antes de empezar a mover.
+        // Leemos el store en este instante en vez de usar el valor del render
+        // anterior; así Ctrl+clic seguido de arrastre nunca pierde integrantes.
+        const liveSelection = useUI.getState().multi;
+        const groupIds = mode === 'move' && liveSelection.includes(block.id) ? liveSelection : [block.id];
+        if (mode === 'move') setMulti(groupIds);
+        focusBlock(block.id);
         begin({
           mode, blockId: block.id, title: block.title, color: block.color, kind: block.kind,
-          grabOffsetMin: 0, durationMin, dayIndex, startMin,
+          grabOffsetMin, durationMin, dayIndex, startMin,
+          visualStartMin: startMin, visualDurationMin: durationMin,
+          pointerClientX: pointer.clientX, pointerClientY: pointer.clientY, overGrid: true,
           // Para estirar hacia arriba el ancla es el final: eso queda quieto.
           anchorMin: mode === 'resizeTop' ? startMin + durationMin : startMin,
           anchorDayIndex: dayIndex, moved: false,
+          groupIds,
+          copy: mode === 'move' && modifier,
         });
+      },
+      onTap: () => {
+        if (mode !== 'move') { focusBlock(block.id); return; }
+        if (modifier) {
+          const liveSelection = useUI.getState().multi;
+          setMulti(liveSelection.includes(block.id) ? liveSelection.filter((id) => id !== block.id) : [...liveSelection, block.id]);
+        } else {
+          // El primer clic también debe ser una selección real. Antes quedaba
+          // sólo como "focused": se veía con aro, pero Ctrl+clic sobre otro
+          // bloque construía un grupo de un único elemento.
+          setMulti([block.id]);
+          focusBlock(block.id);
+        }
       },
     });
   };
 
 
   return (
+    <>
     <div
       role="button"
+      data-block-id={block.id}
       tabIndex={0}
+      aria-pressed={selected}
       aria-label={`${block.title}, ${hhmm(startMin)}, ${durationLabel(durationMin)}`}
       onPointerDown={(e) => grab(e, 'move')}
       onDoubleClick={(e) => { e.stopPropagation(); onOpen(block.id); }}
       onKeyDown={(e) => {
         if (e.key === 'Enter') { e.preventDefault(); onOpen(block.id); }
-        if (e.key === ' ') { e.preventDefault(); setStatus(block.id, done ? 'planned' : 'done'); }
+        if (e.key === ' ' && !readOnly) { e.preventDefault(); setStatus(block.id, done ? 'planned' : 'done'); }
       }}
       className={[
         'group absolute select-none overflow-hidden rounded-lg border text-left transition-shadow',
-        preview ? 'z-40 shadow-lg' : 'z-10',
+        preview ? 'z-40 scale-[1.01] cursor-grabbing shadow-lg' : 'z-10',
         selected || focused ? 'ring-2 ring-offset-1' : '',
         isBreak ? 'break-fill border-dashed' : '',
         skipped ? 'skipped-fill border-dashed opacity-60' : '',
         done ? 'opacity-45' : '',
       ].join(' ')}
       style={{
-        top, height, left: 2, right: 2,
+        top, height,
+        left: `calc(${(lane / laneCount) * 100}% + 2px)`,
+        width: `calc(${100 / laneCount}% - 4px)`,
         touchAction: 'pan-y',
         borderStyle: block.pinned ? 'dashed' : undefined,
         borderWidth: block.pinned ? 1.5 : undefined,
-        cursor: block.pinned ? 'default' : tool === 'box' ? 'crosshair' : 'grab',
-        borderColor: block.pinned
+        cursor: block.pinned || readOnly ? 'default' : tool === 'box' ? 'crosshair' : 'grab',
+        borderColor: block.pinned || readOnly
           ? 'var(--pin)'
           : skipped
           ? 'var(--muted)'
@@ -130,8 +175,13 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, onOpen }: Props
             done ? 'line-through' : '',
           ].join(' ')}
         >
-          {block.title}
+          {block.icon && <span className="mr-1" aria-hidden>{block.icon}</span>}{block.title}
         </p>
+        {!tiny && block.notes.trim() && (
+          <p className="mt-0.5 truncate pr-8 text-[10.5px] leading-tight text-muted" title={block.notes}>
+            {block.notes}
+          </p>
+        )}
         {tiny && (
           <span className="tabular shrink-0 pr-5 font-mono text-[10px] text-muted">{hhmm(startMin)}</span>
         )}
@@ -144,7 +194,7 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, onOpen }: Props
       </div>
 
       {/* Estado: siempre visible, no le resta ancho al título porque flota. */}
-      <button
+      {!readOnly && <button
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
@@ -172,10 +222,19 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, onOpen }: Props
             <path d="M2.5 6.4 4.8 8.7 9.5 3.6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         )}
-      </button>
+      </button>}
+
+      {readOnly && (
+        <span
+          className="absolute right-1 top-1 z-[55] rounded-md border border-line bg-surface/85 px-1.5 py-0.5 text-[9px] font-semibold text-muted"
+          title="Evento administrado por Google Calendar"
+        >
+          Google
+        </span>
+      )}
 
       {/* Candado, tachito y lápiz: flotan encima, solo al pasar el mouse o si está enfocado. */}
-      <div
+      {!readOnly && <div
         className={[
           'absolute right-1 top-7 z-[55] flex items-center gap-1 rounded-lg p-0.5 backdrop-blur-sm transition-opacity',
           focused ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100',
@@ -198,7 +257,7 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, onOpen }: Props
         </button>
         <button
           onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => { e.stopPropagation(); removeBlock(block.id); }}
+          onClick={(e) => { e.stopPropagation(); setAskDelete(true); }}
           aria-label={`Eliminar ${block.title}`}
           title="Eliminar bloque"
           className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted hover:text-[var(--now)]"
@@ -221,25 +280,39 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, onOpen }: Props
               stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
           </svg>
         </button>
-      </div>
+      </div>}
 
       {/* Tirador de arriba: agranda el bloque hacia atrás empujando lo de encima */}
-      <div
+      {!readOnly && <div
         onPointerDown={(e) => grab(e, 'resizeTop')}
-        className="absolute inset-x-0 top-0 z-50 flex h-3.5 cursor-ns-resize items-start justify-center pt-[3px]"
-        style={{ touchAction: 'pan-y' }}
+        role="button"
+        aria-label={`Extender ${block.title} desde el inicio`}
+        className="absolute inset-x-0 top-0 z-50 flex cursor-ns-resize items-start justify-center"
+        style={{ touchAction: 'pan-y', height: Math.min(10, Math.max(3, height * 0.22)) }}
       >
         <span className="h-[3px] w-8 rounded-full bg-current opacity-0 transition-opacity group-hover:opacity-35" />
-      </div>
+      </div>}
 
-      <div
+      {!readOnly && <div
         onPointerDown={(e) => grab(e, 'resize')}
-        className="absolute inset-x-0 bottom-0 z-50 flex h-3.5 cursor-ns-resize items-end justify-center pb-[3px]"
-        style={{ touchAction: 'pan-y' }}
+        role="button"
+        aria-label={`Extender ${block.title} desde el final`}
+        className="absolute inset-x-0 bottom-0 z-50 flex cursor-ns-resize items-end justify-center"
+        style={{ touchAction: 'pan-y', height: Math.min(10, Math.max(3, height * 0.22)) }}
       >
         <span className="h-[3px] w-8 rounded-full bg-current opacity-0 transition-opacity group-hover:opacity-35" />
-      </div>
+      </div>}
     </div>
+    <ConfirmModal
+      open={askDelete}
+      onClose={() => setAskDelete(false)}
+      onConfirm={() => removeBlock(block.id)}
+      title="Eliminar bloque"
+      message={`¿Querés eliminar “${block.title}” de la agenda?`}
+      detail={block.seriesId ? 'Se elimina únicamente esta ocurrencia. La serie y sus demás referencias no cambian.' : 'Esta acción no se puede deshacer.'}
+      confirmLabel="Eliminar"
+    />
+    </>
   );
 }
 

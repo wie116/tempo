@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useStore } from '../store';
 import { THEMES } from '../lib/themes';
 import { CHIMES, playChime } from '../lib/audio';
 import type { ChimeId } from '../lib/audio';
-import { Btn, ConfirmModal, Modal, NumField, Row, inputCls } from './Modal';
-import { hhmm, minutesOf } from '../lib/time';
+import { Btn, ConfirmModal, Modal, NumField, Row, Tabs, TimeField, inputCls } from './Modal';
+import { GoogleCalendarSettings } from './GoogleCalendarSettings';
+import { usePlannerLog } from '../lib/plannerLog';
+import { useUI } from '../store';
 
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -16,27 +18,17 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-export function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SettingsModal({
+  open, onClose, integrationNotice,
+}: { open: boolean; onClose: () => void; integrationNotice?: string | null }) {
   const s = useStore((st) => st.settings);
   const set = useStore((st) => st.updateSettings);
-  const blocks = useStore((st) => st.blocks);
   const reset = useStore((st) => st.resetSettings);
-  const [note, setNote] = useState<string | null>(null);
+  const resetAllData = useStore((st) => st.resetAllData);
   const [askReset, setAskReset] = useState(false);
-
-  /* La jornada no puede achicarse por encima de lo que ya tenés agendado:
-     el bloque quedaría fuera de la grilla, invisible pero vivo. */
-  const bounds = useMemo(() => {
-    let earliest = 24 * 60;
-    let latest = 0;
-    for (const b of Object.values(blocks)) {
-      earliest = Math.min(earliest, minutesOf(b.startsAt));
-      latest = Math.max(latest, minutesOf(b.startsAt) + b.durationMin);
-    }
-    return Object.keys(blocks).length
-      ? { minStartHour: Math.floor(earliest / 60), maxEndHour: Math.ceil(latest / 60), earliest, latest }
-      : null;
-  }, [blocks]);
+  const [askErase, setAskErase] = useState(false);
+  const [askEraseFinal, setAskEraseFinal] = useState(false);
+  const [tab, setTab] = useState<'appearance' | 'planning' | 'notifications' | 'integrations' | 'account'>('appearance');
 
   return (
     <>
@@ -44,17 +36,25 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
       open={open}
       onClose={onClose}
       title="Ajustes"
-      subtitle="Apariencia, jornada y avisos"
+      subtitle="Personalizá la experiencia sin mezclar opciones de contextos distintos."
       footer={
         <>
-          <Btn variant="danger" onClick={() => setAskReset(true)}>
-            Restaurar valores por defecto
-          </Btn>
+          {tab !== 'account' && <Btn variant="danger" onClick={() => setAskReset(true)}>
+            Restaurar preferencias
+          </Btn>}
           <Btn variant="primary" onClick={onClose}>Listo</Btn>
         </>
       }
     >
-      <Section title="Theme">
+      <Tabs active={tab} onChange={setTab} tabs={[
+        { id: 'appearance' as const, label: 'Apariencia' },
+        { id: 'planning' as const, label: 'Agenda' },
+        { id: 'notifications' as const, label: 'Avisos' },
+        { id: 'integrations' as const, label: 'Integraciones' },
+        { id: 'account' as const, label: 'Cuenta' },
+      ]} />
+
+      {tab === 'appearance' && <Section title="Tema y densidad">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {THEMES.map((t) => (
             <button
@@ -83,55 +83,37 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
             className="w-32 accent-[var(--accent)]"
           />
         </Row>
-      </Section>
+        <Row label="Estilo del reloj" hint="Podés cambiarlo también desde el panel Actividad">
+          <select value={s.clockStyle} onChange={(e) => set({ clockStyle: e.target.value as typeof s.clockStyle })} className={`${inputCls} w-36`}>
+            <option value="rings">Anillos</option>
+            <option value="focus">Enfoque</option>
+            <option value="stats">Resumen</option>
+          </select>
+        </Row>
+      </Section>}
 
-      <Section title="Jornada">
-        <Row label="Empieza a las">
-          <NumField
-            value={s.dayStartHour}
+      {tab === 'planning' && <Section title="Jornada">
+        <p className="mb-2 rounded-lg bg-surface-2 px-3 py-2 text-[11.5px] leading-relaxed text-muted">
+          La agenda muestra siempre las 24 horas. La jornada sólo resalta tu horario habitual y define el rango que usa Organizar.
+        </p>
+        <Row label="Empieza a las" hint="Inicio sugerido para Organizar">
+          <TimeField
+            value={s.dayStartHour * 60}
             min={0}
-            step={1}
-            suffix="h"
-            onCommit={(v) => {
-              if (v === null) return;
-              const wanted = Math.min(12, v);
-              const floor = bounds ? bounds.minStartHour : 0;
-              if (wanted > floor) {
-                setNote(`Tenés un bloque que empieza ${hhmm(bounds!.earliest)}. La jornada no puede arrancar después.`);
-                set({ dayStartHour: floor });
-              } else {
-                setNote(null);
-                set({ dayStartHour: wanted });
-              }
-            }}
+            max={(s.dayEndHour - 1) * 60}
+            step={60}
+            onCommit={(minutes) => set({ dayStartHour: Math.min(s.dayEndHour - 1, minutes / 60) })}
           />
         </Row>
-        <Row label="Termina a las">
-          <NumField
-            value={s.dayEndHour}
-            min={13}
-            step={1}
-            suffix="h"
-            onCommit={(v) => {
-              if (v === null) return;
-              const wanted = Math.min(24, Math.max(13, v));
-              const ceil = bounds ? Math.max(13, bounds.maxEndHour) : 13;
-              if (wanted < ceil) {
-                setNote(`Tenés un bloque que termina ${hhmm(bounds!.latest)}. Movelo o acortalo antes de recortar la jornada.`);
-                set({ dayEndHour: ceil });
-              } else {
-                setNote(null);
-                set({ dayEndHour: wanted });
-              }
-            }}
+        <Row label="Termina a las" hint="Fin sugerido para Organizar">
+          <TimeField
+            value={s.dayEndHour * 60}
+            min={(s.dayStartHour + 1) * 60}
+            max={24 * 60}
+            step={60}
+            onCommit={(minutes) => set({ dayEndHour: Math.max(s.dayStartHour + 1, minutes / 60) })}
           />
         </Row>
-        {note && (
-          <p className="mt-1 rounded-lg border border-dashed px-2.5 py-2 text-[11.5px] leading-snug"
-            style={{ borderColor: 'var(--now)', color: 'var(--now)' }}>
-            {note}
-          </p>
-        )}
         <Row label="Duración por defecto" hint="Para bloques nuevos y tareas sin duración fija">
           <NumField value={s.defaultBlockMin} onCommit={(v) => v !== null && set({ defaultBlockMin: v })} suffix="min" />
         </Row>
@@ -140,9 +122,26 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
             onChange={(e) => set({ weekStartsOnMonday: e.target.checked })}
             className="h-4 w-4 accent-[var(--accent)]" />
         </Row>
-      </Section>
+      </Section>}
 
-      <Section title="Avisos del reloj">
+      {tab === 'integrations' && <Section title="Calendarios conectados">
+        <GoogleCalendarSettings active={open} notice={integrationNotice} />
+      </Section>}
+
+      {tab === 'account' && <Section title="Cuenta y datos">
+        <p className="mb-4 text-[12px] leading-relaxed text-muted">
+          Administrá los datos guardados por Tempo. Las preferencias se pueden restaurar sin afectar tu agenda desde las demás pestañas.
+        </p>
+        <div className="rounded-xl border p-4" style={{ borderColor: 'color-mix(in oklab, var(--now) 55%, var(--border))' }}>
+          <p className="text-[13px] font-semibold">Borrar todos mis datos</p>
+          <p className="mb-3 mt-1 text-[11.5px] leading-relaxed text-muted">
+            Elimina tareas, rutinas, clasificaciones, bloques, series, notas y pendientes de organización. Tempo queda completamente vacío.
+          </p>
+          <Btn variant="danger" onClick={() => setAskErase(true)}>Borrar todos los datos</Btn>
+        </div>
+      </Section>}
+
+      {tab === 'notifications' && <><Section title="Comportamiento del reloj">
         <p className="mb-1 text-[11.5px] leading-snug text-muted">
           El reloj corre solo: no hay que arrancar nada. La agenda define los límites y Tempo te avisa
           cuando cruzás uno.
@@ -178,18 +177,41 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
             onTouchEnd={() => playChime(s.chime, s.volume)}
             className="w-32 accent-[var(--accent)]" />
         </Row>
-      </Section>
+      </Section></>}
     </Modal>
 
     <ConfirmModal
       open={askReset}
       onClose={() => setAskReset(false)}
-      onConfirm={() => { reset(); setNote(null); }}
+      onConfirm={reset}
       title="Restaurar valores por defecto"
       message="Vuelven a fábrica el theme, el horario de la jornada, el zoom, la duración por defecto y los sonidos."
-      detail="Tus bloques, tareas y grupos no se tocan. Si tenés bloques fuera del horario por defecto, la jornada se abre lo necesario para que sigan visibles."
+      detail="Tus bloques, tareas y clasificaciones no se tocan. La agenda seguirá mostrando las 24 horas."
       confirmLabel="Restaurar"
       danger={false}
+    />
+    <ConfirmModal
+      open={askErase}
+      onClose={() => setAskErase(false)}
+      onConfirm={() => setAskEraseFinal(true)}
+      title="Borrar todos los datos"
+      message="Se van a eliminar todas tus tareas, rutinas, clasificaciones y bloques de la agenda."
+      detail="Esta acción no se puede deshacer. Para evitar errores, todavía habrá una confirmación final."
+      confirmLabel="Continuar"
+    />
+    <ConfirmModal
+      open={askEraseFinal}
+      onClose={() => setAskEraseFinal(false)}
+      onConfirm={() => {
+        resetAllData();
+        usePlannerLog.getState().clear();
+        useUI.getState().clearSelection();
+        onClose();
+      }}
+      title="Confirmación final"
+      message="¿Seguro que querés dejar Tempo completamente vacío?"
+      detail="No quedarán tareas, rutinas, clasificaciones, notas ni eventos propios en la agenda."
+      confirmLabel="Sí, borrar todo"
     />
     </>
   );

@@ -76,6 +76,10 @@
 
 html, body, #root { height: 100%; }
 
+@supports (height: 100dvh) {
+  html, body, #root { height: 100dvh; }
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -128,6 +132,12 @@ body {
   animation: fade 140ms ease-out;
 }
 .modal-panel { animation: pop 160ms cubic-bezier(.2,.9,.3,1); }
+.app-bottom-bar { padding-bottom: max(.5rem, env(safe-area-inset-bottom)); }
+
+@media (max-width: 639px) {
+  .card { border-radius: 10px; }
+  .modal-panel > footer { padding-bottom: max(.75rem, env(safe-area-inset-bottom)); }
+}
 @keyframes fade { from { opacity: 0; } }
 @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 

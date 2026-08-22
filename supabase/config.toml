@@ -1,0 +1,2 @@
+[functions.google-calendar-callback]
+verify_jwt = false

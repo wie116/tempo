@@ -1,5 +1,6 @@
 import type { AutoplanConfig, Block, List, Task } from '../types';
 import { SLOT_MIN, minutesOf, snap } from './time';
+import { isReadOnlyBlock } from './planning';
 
 /** Algo que se puede acomodar: viene de una tarea pendiente o de un bloque ya agendado. */
 export interface PlanCandidate {
@@ -60,18 +61,26 @@ function shuffle<T>(arr: T[], seed: number): T[] {
 
 /** Candidatos a partir de las tareas que todavía no están en la agenda. */
 export function candidatesFromTasks(
-  tasks: Task[], lists: List[], scheduledTaskIds: Set<string>, cfg: AutoplanConfig
+  tasks: Task[], lists: List[], scheduledTaskIds: Set<string>, cfg: AutoplanConfig, targetDay?: string
 ): PlanCandidate[] {
   const listOrder = new Map(lists.map((l) => [l.id, l.order]));
+  const priorityOrder: Record<Task['priority'], number> = { urgent: 0, high: 1, normal: 2, low: 3 };
   return tasks
     .filter((t) => {
       if (t.archived) return false;
+      if (!t.recurring && t.inbox) return false;
+      if (!t.recurring && targetDay && t.plannedDate && t.plannedDate > targetDay) return false;
       if (cfg.listIds && !cfg.listIds.includes(t.listId)) return false;
-      if (scheduledTaskIds.has(t.id)) return false;
+      if (!t.recurring && scheduledTaskIds.has(t.id)) return false;
       if (t.recurring && !cfg.includeRecurring) return false;
       return true;
     })
-    .sort((a, b) => (listOrder.get(a.listId) ?? 0) - (listOrder.get(b.listId) ?? 0) || a.order - b.order)
+    .sort((a, b) =>
+      priorityOrder[a.priority] - priorityOrder[b.priority] ||
+      (a.dueDate ?? '9999-12-31').localeCompare(b.dueDate ?? '9999-12-31') ||
+      (listOrder.get(a.listId) ?? 0) - (listOrder.get(b.listId) ?? 0) ||
+      a.order - b.order
+    )
     .map((t) => ({
       key: t.id,
       taskId: t.id,
@@ -96,7 +105,7 @@ export function candidatesFromDay(dayBlocks: Block[], _fromMin: number): {
   const obstacles: Block[] = [];
 
   for (const b of [...dayBlocks].sort((a, c) => a.startsAt.localeCompare(c.startsAt))) {
-    const movable = b.kind !== 'break' && b.status === 'planned' && !b.pinned;
+    const movable = b.kind !== 'break' && b.status === 'planned' && !b.pinned && !isReadOnlyBlock(b);
     if (movable) {
       candidates.push({
         key: b.id, taskId: b.taskId, blockId: b.id,

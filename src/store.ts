@@ -1,23 +1,26 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { parseISO } from 'date-fns';
+import { addDays, differenceInCalendarDays, parseISO } from 'date-fns';
 import type { Block, BlockKind, BlockStatus, List, Settings, Task, ViewMode } from './types';
 import { uid } from './lib/id';
 import { SLOT_MIN, clamp, dateKey, isoFor, minutesOf, snap } from './lib/time';
 import { PALETTE } from './lib/themes';
 import { expandSeries } from './lib/repeat';
 import type { PlanItem } from './lib/autoplan';
+import { applyBlockPatches, isReadOnlyBlock, normalizeBlock, packDay } from './lib/planning';
+import { findAvailableStart } from './lib/conflicts';
 
 /** Grupo donde caen los bloques creados a mano, sin tarea previa. */
 export const UNSORTED_NAME = 'Sin clasificar';
 
 const DEFAULT_SETTINGS: Settings = {
   theme: 'daylight',
-  dayStartHour: 6,
+  dayStartHour: 7,
   dayEndHour: 23,
   slotPx: 12,
   weekStartsOnMonday: true,
   rightPanelOpen: true,
+  clockStyle: 'rings',
   chainMove: false,
   defaultBlockMin: 10,
   soundEnabled: true,
@@ -26,6 +29,7 @@ const DEFAULT_SETTINGS: Settings = {
   breakChime: 'chime',
   startChime: true,
   closePrompt: true,
+  showPendingTray: true,
   autoplan: {
     source: 'pending',
     order: 'list',
@@ -41,78 +45,6 @@ const DEFAULT_SETTINGS: Settings = {
   },
 };
 
-/* ---------------------------------------------------------------
-   Empaquetado: nada se superpone. El bloque recién movido manda.
----------------------------------------------------------------- */
-function packDay(
-  blocks: Record<string, Block>,
-  dayKey: string,
-  anchorId: string,
-  dayEndMin: number
-): Record<string, Block> {
-  const sameDay = Object.values(blocks).filter((b) => b.startsAt.slice(0, 10) === dayKey);
-  const anchor = sameDay.find((b) => b.id === anchorId);
-  if (!anchor || sameDay.length < 2) return blocks;
-
-  const out = { ...blocks };
-  const taken: { start: number; end: number }[] = [];
-
-  const place = (b: Block, immovable: boolean): number => {
-    let start = minutesOf(b.startsAt);
-    if (!immovable) {
-      let guard = 0;
-      let bumped = true;
-      while (bumped && guard++ < 300) {
-        bumped = false;
-        for (const t of taken) {
-          if (start < t.end && start + b.durationMin > t.start) {
-            start = t.end;
-            bumped = true;
-          }
-        }
-      }
-      start = snap(Math.min(start, Math.max(0, dayEndMin - b.durationMin)));
-    }
-    taken.push({ start, end: start + b.durationMin });
-    return start;
-  };
-
-  // 1) Los fijos no se mueven jamás, ni siquiera por el bloque que acabás de soltar.
-  for (const b of sameDay.filter((x) => x.pinned)) place(b, true);
-
-  // 2) El que acabás de mover manda sobre el resto, pero cede ante un fijo.
-  if (!anchor.pinned) {
-    const start = place(anchor, false);
-    if (start !== minutesOf(anchor.startsAt)) {
-      out[anchor.id] = { ...anchor, startsAt: isoFor(parseISO(anchor.startsAt), start) };
-    }
-  }
-
-  // 3) Los demás se acomodan alrededor.
-  const rest = sameDay
-    .filter((b) => b.id !== anchorId && !b.pinned)
-    .sort((a, b) => minutesOf(a.startsAt) - minutesOf(b.startsAt) || a.id.localeCompare(b.id));
-
-  for (const b of rest) {
-    const start = place(b, false);
-    if (start !== minutesOf(b.startsAt)) {
-      out[b.id] = { ...b, startsAt: isoFor(parseISO(b.startsAt), start) };
-    }
-  }
-  return out;
-}
-
-/** Toda escritura pasa por acá: garantiza múltiplos de 10 minutos. */
-function normalize(b: Block): Block {
-  return {
-    ...b,
-    pinned: Boolean(b.pinned),
-    seriesId: b.seriesId ?? null,
-    startsAt: isoFor(parseISO(b.startsAt), snap(minutesOf(b.startsAt))),
-    durationMin: Math.max(SLOT_MIN, snap(b.durationMin)),
-  };
-}
-
 interface State {
   lists: List[];
   tasks: Task[];
@@ -127,9 +59,10 @@ interface State {
   setCursor: (d: string) => void;
   updateSettings: (patch: Partial<Settings>) => void;
   resetSettings: () => void;
+  resetAllData: () => void;
   setZoom: (slotPx: number) => void;
 
-  addList: (name: string) => string;
+  addList: (name: string, scope?: List['scope']) => string;
   updateList: (id: string, patch: Partial<List>) => void;
   removeList: (id: string) => void;
   toggleListCollapsed: (id: string) => void;
@@ -154,6 +87,11 @@ interface State {
   removeBlock: (id: string) => void;
   removeBlocks: (ids: string[]) => void;
   removeSeries: (seriesId: string) => void;
+  removeSeriesFrom: (seriesId: string, fromStartsAt: string) => void;
+  /** Crea o reemplaza la repetición desde una ocurrencia concreta. */
+  setBlockRecurrence: (id: string, repeat: Task['repeat'], until: string | null, weekdays: number[] | null) => void;
+  /** Copia los cambios puntuales de una ocurrencia al resto de su serie. */
+  applyBlockToSeries: (id: string, scope: 'all' | 'future') => void;
   /** Estira el bloque hacia arriba empujando lo de encima, sin pisarlo. */
   resizeTop: (day: Date, id: string, newStartMin: number) => void;
   setDone: (id: string, done: boolean) => void;
@@ -163,35 +101,40 @@ interface State {
   setPinned: (ids: string[], pinned: boolean) => void;
   duplicateBlock: (id: string) => string | null;
   shiftBlocks: (ids: string[], deltaMin: number) => void;
+  /** Mueve o copia una selección conservando distancias entre días y horas. */
+  placeBlockGroup: (ids: string[], anchorId: string, day: Date, startMin: number, copy: boolean) => string[];
   /** "Necesité más tiempo": cierra el original y agenda la continuación. */
   extendBlock: (id: string, extraMin: number) => string | null;
   applyPlan: (day: Date, items: PlanItem[]) => void;
   /** Crea los bloques de una serie ya resuelta (fechas puntuales, sin conflictos). */
-  scheduleSeries: (taskId: string, dates: Date[], startMin: number, durationMin: number) => void;
+  scheduleSeries: (taskId: string, occurrences: { date: Date; startMin: number }[], durationMin: number) => void;
 }
 
 function seed() {
-  const l1 = uid(), l2 = uid(), l3 = uid();
-  const L = (id: string, name: string, color: string, order: number): List => ({
-    id, name, color, order, collapsed: false,
+  const l1 = uid(), l2 = uid(), l3 = uid(), l4 = uid();
+  const L = (id: string, name: string, color: string, order: number, scope: List['scope']): List => ({
+    id, name, color, order, collapsed: false, scope,
   });
   const lists: List[] = [
-    L(l1, 'Trabajo', PALETTE[0], 0),
-    L(l2, 'Personal', PALETTE[1], 1),
-    L(l3, 'Rutina', PALETTE[6], 2),
+    L(l1, 'Trabajo', PALETTE[0], 0, 'todo'),
+    L(l2, 'Personal', PALETTE[1], 1, 'todo'),
+    L(l3, 'Bienestar', PALETTE[6], 0, 'routine'),
+    L(l4, 'Trabajo recurrente', PALETTE[2], 1, 'routine'),
   ];
   const t = (listId: string, title: string, estimatedMin: number | null, recurring = false, order = 0): Task => ({
     id: uid(), listId, title, estimatedMin, color: null, recurring,
-    repeat: 'none', repeatUntil: null, repeatWeekdays: null, archived: false, notes: '', order,
+    repeat: 'none', repeatUntil: null, repeatWeekdays: null,
+    priority: 'normal', plannedDate: null, dueDate: null, inbox: false,
+    archived: false, notes: '', order,
   });
   const tasks: Task[] = [
     t(l1, 'Foco profundo', 90, false, 0),
-    t(l1, 'Responder mails', 30, true, 1),
+    t(l4, 'Responder mails', 30, true, 1),
     t(l1, 'Revisar pendientes', null, false, 2),
-    t(l2, 'Leer', 40, true, 0),
+    t(l3, 'Leer', 40, true, 0),
     t(l2, 'Trámite del banco', null, false, 1),
-    t(l3, 'Movimiento', 60, true, 0),
-    t(l3, 'Cierre del día', 10, true, 1),
+    t(l3, 'Movimiento', 60, true, 1),
+    t(l4, 'Cierre del día', 10, true, 2),
   ];
   return { lists, tasks };
 }
@@ -209,41 +152,46 @@ export const useStore = create<State>()(
       setView: (view) => set({ view }),
       setCursor: (cursor) => set({ cursor }),
       updateSettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
-      /** Vuelve la configuración a fábrica sin tocar bloques ni tareas. */
-      resetSettings: () =>
-        set((s) => {
-          // Respetamos la jornada mínima que exigen los bloques ya agendados.
-          let latest = 0;
-          let earliest = 24 * 60;
-          for (const b of Object.values(s.blocks)) {
-            earliest = Math.min(earliest, minutesOf(b.startsAt));
-            latest = Math.max(latest, minutesOf(b.startsAt) + b.durationMin);
-          }
-          const has = Object.keys(s.blocks).length > 0;
-          return {
-            settings: {
-              ...DEFAULT_SETTINGS,
-              dayStartHour: has ? Math.min(DEFAULT_SETTINGS.dayStartHour, Math.floor(earliest / 60)) : DEFAULT_SETTINGS.dayStartHour,
-              dayEndHour: has ? Math.max(DEFAULT_SETTINGS.dayEndHour, Math.ceil(latest / 60)) : DEFAULT_SETTINGS.dayEndHour,
-            },
-          };
-        }),
+      /** Vuelve las preferencias a fábrica sin tocar bloques ni tareas. */
+      resetSettings: () => set({ settings: DEFAULT_SETTINGS }),
+      /** Elimina el contenido del usuario y deja Tempo vacío, con preferencias de fábrica. */
+      resetAllData: () => set({
+        lists: [],
+        tasks: [],
+        blocks: {},
+        settings: DEFAULT_SETTINGS,
+        view: 'week',
+        cursor: dateKey(new Date()),
+        unsortedListId: null,
+      }),
       setZoom: (slotPx) => set((s) => ({ settings: { ...s.settings, slotPx } })),
 
-      addList: (name) => {
+      addList: (name, scope = 'todo') => {
         const id = uid();
         set((s) => ({
-          lists: [...s.lists, { id, name, color: PALETTE[s.lists.length % PALETTE.length], order: s.lists.length, collapsed: false }],
+          lists: [...s.lists, {
+            id, name, color: PALETTE[s.lists.length % PALETTE.length],
+            order: s.lists.filter((list) => list.scope === scope).length, collapsed: false, scope,
+          }],
         }));
         return id;
       },
       updateList: (id, patch) =>
         set((s) => ({ lists: s.lists.map((l) => (l.id === id ? { ...l, ...patch } : l)) })),
       removeList: (id) =>
-        set((s) => ({
-          lists: s.lists.filter((l) => l.id !== id),
-          tasks: s.tasks.filter((t) => t.listId !== id),
-        })),
+        set((s) => {
+          const removedTaskIds = new Set(s.tasks.filter((t) => t.listId === id).map((t) => t.id));
+          const blocks = { ...s.blocks };
+          for (const block of Object.values(blocks)) {
+            if (block.taskId && removedTaskIds.has(block.taskId)) delete blocks[block.id];
+          }
+          return {
+            lists: s.lists.filter((l) => l.id !== id),
+            tasks: s.tasks.filter((t) => t.listId !== id),
+            blocks,
+            unsortedListId: s.unsortedListId === id ? null : s.unsortedListId,
+          };
+        }),
       toggleListCollapsed: (id) =>
         set((s) => ({ lists: s.lists.map((l) => (l.id === id ? { ...l, collapsed: !l.collapsed } : l)) })),
 
@@ -255,6 +203,7 @@ export const useStore = create<State>()(
             {
               id, listId, title, color: null,
               recurring: false, repeat: 'none', repeatUntil: null, repeatWeekdays: null, archived: false, notes: '',
+              priority: 'normal', plannedDate: null, dueDate: null, inbox: false,
               order: s.tasks.filter((t) => t.listId === listId).length,
               ...opts,
               estimatedMin:
@@ -271,6 +220,17 @@ export const useStore = create<State>()(
               ? {
                   ...t,
                   ...patch,
+                  ...(patch.recurring !== undefined && patch.recurring !== t.recurring
+                    ? {
+                        listId: s.lists.find((list) => list.scope === (patch.recurring ? 'routine' : 'todo'))?.id ?? t.listId,
+                        inbox: patch.recurring ? false : t.inbox,
+                      }
+                    : {}),
+                  // Un To-Do es único por definición. Al convertir una rutina
+                  // limpiamos cualquier serie configurada anteriormente.
+                  ...(patch.recurring === false
+                    ? { recurring: false, repeat: 'none' as const, repeatUntil: null, repeatWeekdays: null }
+                    : {}),
                   estimatedMin:
                     patch.estimatedMin === undefined
                       ? t.estimatedMin
@@ -292,14 +252,14 @@ export const useStore = create<State>()(
         const s = get();
         const found =
           s.lists.find((l) => l.id === s.unsortedListId) ??
-          s.lists.find((l) => l.name === UNSORTED_NAME);
+            s.lists.find((l) => l.name === UNSORTED_NAME && l.scope === 'todo');
         if (found) {
           if (s.unsortedListId !== found.id) set({ unsortedListId: found.id });
           return found.id;
         }
         const id = uid();
         set((st) => ({
-          lists: [...st.lists, { id, name: UNSORTED_NAME, color: PALETTE[7], order: 999, collapsed: false }],
+          lists: [...st.lists, { id, name: UNSORTED_NAME, color: PALETTE[7], order: 999, collapsed: false, scope: 'todo' }],
           unsortedListId: id,
         }));
         return id;
@@ -308,8 +268,9 @@ export const useStore = create<State>()(
       addBlock: (b) => {
         const id = uid();
         set((s) => {
-          const next = { ...s.blocks, [id]: normalize({ ...b, id }) };
-          return { blocks: packDay(next, b.startsAt.slice(0, 10), id, s.settings.dayEndHour * 60) };
+          const block = normalizeBlock({ ...b, id });
+          const next = { ...s.blocks, [id]: block };
+          return { blocks: packDay(next, block.startsAt.slice(0, 10), [id], 24 * 60) };
         });
         return id;
       },
@@ -318,6 +279,9 @@ export const useStore = create<State>()(
         const s = get();
         const task = s.tasks.find((t) => t.id === taskId);
         if (!task) return null;
+        if (!task.recurring && Object.values(s.blocks).some((b) => b.taskId === taskId && b.status === 'planned')) {
+          return null;
+        }
         const list = s.lists.find((l) => l.id === task.listId);
         const base = {
           taskId,
@@ -331,20 +295,10 @@ export const useStore = create<State>()(
           notes: '',
         };
 
-        if (task.repeat === 'none') {
-          return s.addBlock({ ...base, startsAt: isoFor(day, startMin), seriesId: null });
-        }
-
-        // Materializamos la serie entera de una: es mucho más fácil de editar
-        // y de depurar que recalcular repeticiones al vuelo.
-        const seriesId = uid();
-        const dates = expandSeries(day, task.repeat, task.repeatUntil, task.repeatWeekdays);
-        let firstId: string | null = null;
-        for (const d of dates) {
-          const id = get().addBlock({ ...base, startsAt: isoFor(d, startMin), seriesId });
-          if (!firstId) firstId = id;
-        }
-        return firstId;
+        // Cada arrastre crea una ocurrencia aislada. La repetición se configura
+        // después sobre este bloque, de modo que la misma plantilla pueda usarse
+        // una vez, semanalmente y mensualmente sin cambiar su definición.
+        return s.addBlock({ ...base, startsAt: isoFor(day, startMin), seriesId: null });
       },
 
       addBreak: (day, startMin, durationMin) =>
@@ -369,7 +323,7 @@ export const useStore = create<State>()(
       moveChain: (day, blockId, newStartMin) =>
         set((s) => {
           const anchor = s.blocks[blockId];
-          if (!anchor || anchor.pinned) return s;
+          if (!anchor || anchor.pinned || isReadOnlyBlock(anchor)) return s;
           const key = anchor.startsAt.slice(0, 10);
           const oldStart = minutesOf(anchor.startsAt);
 
@@ -384,7 +338,7 @@ export const useStore = create<State>()(
           for (const b of dayBlocks) {
             if (b.id === blockId) started = true;
             if (!started) continue;
-            if (b.pinned) break;
+            if (b.pinned || isReadOnlyBlock(b)) break;
             chain.push(b);
           }
           if (!chain.length) return s;
@@ -398,7 +352,9 @@ export const useStore = create<State>()(
           const before = dayBlocks.filter(
             (b) => !inChain.has(b.id) && minutesOf(b.startsAt) + b.durationMin <= chainStart
           );
-          const pinsAfter = dayBlocks.filter((b) => b.pinned && minutesOf(b.startsAt) >= chainEnd);
+          const pinsAfter = dayBlocks.filter(
+            (b) => (b.pinned || isReadOnlyBlock(b)) && minutesOf(b.startsAt) >= chainEnd
+          );
           const floor = before.length
             ? Math.max(...before.map((b) => minutesOf(b.startsAt) + b.durationMin))
             : 0;
@@ -418,19 +374,14 @@ export const useStore = create<State>()(
 
       applyReorder: (day, items) =>
         set((s) => {
-          const blocks = { ...s.blocks };
-          for (const it of items) {
-            const b = blocks[it.blockId];
-            if (!b) continue;
-            blocks[it.blockId] = { ...b, startsAt: isoFor(day, snap(it.startMin)) };
-          }
-          return { blocks };
+          const patches = items.map((it) => ({ id: it.blockId, patch: { startsAt: isoFor(day, it.startMin) } }));
+          return { blocks: applyBlockPatches(s.blocks, patches, 24 * 60) };
         }),
 
       unscheduleBlocks: (ids) => {
         for (const id of ids) {
           const b = get().blocks[id];
-          if (!b) continue;
+          if (!b || isReadOnlyBlock(b)) continue;
           // Un bloque suelto sin tarea detrás no puede volver a ningún lado: le creamos una.
           if (!b.taskId) {
             const listId = get().ensureUnsortedList();
@@ -443,19 +394,20 @@ export const useStore = create<State>()(
       updateBlock: (id, patch) =>
         set((s) => {
           const prev = s.blocks[id];
-          if (!prev) return s;
-          const merged = normalize({ ...prev, ...patch });
+          if (!prev || isReadOnlyBlock(prev)) return s;
+          const merged = normalizeBlock({ ...prev, ...patch });
           const next = { ...s.blocks, [id]: merged };
           const timeChanged = merged.startsAt !== prev.startsAt || merged.durationMin !== prev.durationMin;
           return {
             blocks: timeChanged
-              ? packDay(next, merged.startsAt.slice(0, 10), id, s.settings.dayEndHour * 60)
+              ? packDay(next, merged.startsAt.slice(0, 10), [id], 24 * 60)
               : next,
           };
         }),
 
       removeBlock: (id) =>
         set((s) => {
+          if (s.blocks[id] && isReadOnlyBlock(s.blocks[id])) return s;
           const blocks = { ...s.blocks };
           delete blocks[id];
           return { blocks };
@@ -464,24 +416,106 @@ export const useStore = create<State>()(
       removeBlocks: (ids) =>
         set((s) => {
           const blocks = { ...s.blocks };
-          for (const id of ids) delete blocks[id];
+          for (const id of ids) if (!blocks[id] || !isReadOnlyBlock(blocks[id])) delete blocks[id];
           return { blocks };
         }),
 
       removeSeries: (seriesId) =>
         set((s) => {
           const blocks = { ...s.blocks };
-          for (const b of Object.values(s.blocks)) if (b.seriesId === seriesId) delete blocks[b.id];
+          for (const b of Object.values(s.blocks)) {
+            if (b.seriesId === seriesId && !isReadOnlyBlock(b)) delete blocks[b.id];
+          }
+          return { blocks };
+        }),
+
+      removeSeriesFrom: (seriesId, fromStartsAt) =>
+        set((s) => {
+          const blocks = { ...s.blocks };
+          for (const b of Object.values(s.blocks)) {
+            if (b.seriesId === seriesId && b.startsAt >= fromStartsAt && !isReadOnlyBlock(b)) delete blocks[b.id];
+          }
+          return { blocks };
+        }),
+
+      setBlockRecurrence: (id, repeat, until, weekdays) => {
+        const initial = get();
+        const anchor = initial.blocks[id];
+        if (!anchor || isReadOnlyBlock(anchor) || anchor.kind === 'break') return;
+        const oldSeriesId = anchor.seriesId;
+        const seriesId = repeat === 'none' ? null : oldSeriesId ?? uid();
+        const blocks = { ...initial.blocks };
+        const occurrenceDetails = new Map<string, { notes: string; icon: string | null }>();
+
+        // Reemplazamos desde esta referencia hacia adelante; el historial queda intacto.
+        if (oldSeriesId) {
+          for (const block of Object.values(blocks)) {
+            if (block.seriesId === oldSeriesId && block.startsAt >= anchor.startsAt) {
+              occurrenceDetails.set(block.startsAt.slice(0, 10), { notes: block.notes, icon: block.icon ?? null });
+            }
+            if (block.id !== id && block.seriesId === oldSeriesId && block.startsAt >= anchor.startsAt) delete blocks[block.id];
+          }
+        }
+        blocks[id] = normalizeBlock({
+          ...anchor, seriesId, repeat, repeatUntil: until, repeatWeekdays: weekdays,
+        });
+        set({ blocks });
+        if (repeat === 'none') return;
+
+        const anchorDate = parseISO(anchor.startsAt);
+        const startMin = minutesOf(anchor.startsAt);
+        const dates = expandSeries(anchorDate, repeat, until, weekdays).slice(1);
+        for (const date of dates) {
+          const current = get();
+          const free = findAvailableStart(
+            date, startMin, anchor.durationMin, Object.values(current.blocks),
+            0, 24 * 60
+          );
+          if (free === null) continue;
+          const details = occurrenceDetails.get(dateKey(date));
+          current.addBlock({
+            ...anchor,
+            startsAt: isoFor(date, free),
+            status: 'planned', closedAt: null, pinned: false,
+            // Comentarios e íconos son propios de cada referencia. Sólo se
+            // propagan cuando la persona pulsa explícitamente “Aplicar”.
+            notes: details?.notes ?? '', icon: details?.icon ?? null,
+            seriesId, repeat, repeatUntil: until, repeatWeekdays: weekdays,
+          });
+        }
+      },
+
+      applyBlockToSeries: (id, scope) =>
+        set((s) => {
+          const anchor = s.blocks[id];
+          if (!anchor?.seriesId || isReadOnlyBlock(anchor)) return s;
+          let blocks = { ...s.blocks };
+          const anchorMin = minutesOf(anchor.startsAt);
+          const touchedByDay = new Map<string, string[]>();
+          for (const block of Object.values(s.blocks)) {
+            if (block.seriesId !== anchor.seriesId || isReadOnlyBlock(block)) continue;
+            if (scope === 'future' && block.startsAt < anchor.startsAt) continue;
+            const next = normalizeBlock({
+              ...block,
+              title: anchor.title, color: anchor.color, durationMin: anchor.durationMin,
+              notes: anchor.notes, icon: anchor.icon ?? null,
+              startsAt: isoFor(parseISO(block.startsAt), anchorMin),
+            });
+            blocks[block.id] = next;
+            const key = next.startsAt.slice(0, 10);
+            touchedByDay.set(key, [...(touchedByDay.get(key) ?? []), block.id]);
+          }
+          for (const [key, ids] of touchedByDay) blocks = packDay(blocks, key, ids, 24 * 60);
           return { blocks };
         }),
 
       resizeTop: (day, id, newStartMin) =>
         set((s) => {
           const b = s.blocks[id];
-          if (!b || b.pinned) return s;
+          if (!b || b.pinned || isReadOnlyBlock(b)) return s;
           const key = b.startsAt.slice(0, 10);
           const end = minutesOf(b.startsAt) + b.durationMin;
-          const floor = s.settings.dayStartHour * 60;
+          const floor = 0;
 
           const above = Object.values(s.blocks)
             .filter((x) => x.startsAt.slice(0, 10) === key && x.id !== id)
@@ -497,7 +531,7 @@ export const useStore = create<State>()(
               const xd = x.durationMin;
               let xs = minutesOf(x.startsAt);
               if (xs + xd > ceiling) {
-                if (x.pinned) return { blockedAt: xs + xd, moves, lowest: ceiling };
+                if (x.pinned || isReadOnlyBlock(x)) return { blockedAt: xs + xd, moves, lowest: ceiling };
                 xs = snap(ceiling - xd);
                 moves.push({ id: x.id, start: xs });
               }
@@ -530,24 +564,32 @@ export const useStore = create<State>()(
       setDone: (id, done) =>
         set((s) => {
           const b = s.blocks[id];
-          if (!b) return s;
+          if (!b || isReadOnlyBlock(b)) return s;
           return {
             blocks: {
               ...s.blocks,
               [id]: { ...b, status: done ? 'done' : 'planned', closedAt: done ? Date.now() : null },
             },
+            tasks: b.taskId
+              ? s.tasks.map((t) => t.id === b.taskId && !t.recurring ? { ...t, archived: done } : t)
+              : s.tasks,
           };
         }),
 
       setStatus: (id, status) =>
         set((s) => {
           const b = s.blocks[id];
-          if (!b) return s;
+          if (!b || isReadOnlyBlock(b)) return s;
           return {
             blocks: {
               ...s.blocks,
               [id]: { ...b, status, closedAt: status === 'planned' ? null : Date.now() },
             },
+            tasks: b.taskId
+              ? s.tasks.map((t) => t.id === b.taskId && !t.recurring
+                ? { ...t, archived: status === 'done' }
+                : t)
+              : s.tasks,
           };
         }),
 
@@ -559,14 +601,16 @@ export const useStore = create<State>()(
       setPinned: (ids, pinned) =>
         set((s) => {
           const blocks = { ...s.blocks };
-          for (const id of ids) if (blocks[id]) blocks[id] = { ...blocks[id], pinned };
+          for (const id of ids) {
+            if (blocks[id] && !isReadOnlyBlock(blocks[id])) blocks[id] = { ...blocks[id], pinned };
+          }
           return { blocks };
         }),
 
       duplicateBlock: (id) => {
         const s = get();
         const b = s.blocks[id];
-        if (!b) return null;
+        if (!b || isReadOnlyBlock(b)) return null;
         return s.addBlock({
           ...b,
           startsAt: isoFor(parseISO(b.startsAt), minutesOf(b.startsAt) + b.durationMin),
@@ -577,20 +621,77 @@ export const useStore = create<State>()(
 
       shiftBlocks: (ids, deltaMin) =>
         set((s) => {
-          const blocks = { ...s.blocks };
-          for (const id of ids) {
-            const b = blocks[id];
-            if (!b) continue;
-            const start = Math.max(0, snap(minutesOf(b.startsAt) + deltaMin));
-            blocks[id] = { ...b, startsAt: isoFor(parseISO(b.startsAt), start) };
-          }
-          return { blocks };
+          const movable = ids
+            .map((id) => s.blocks[id])
+            .filter((b): b is Block => Boolean(b && !b.pinned && !isReadOnlyBlock(b)));
+          if (!movable.length) return s;
+          const requested = snap(deltaMin);
+          const minStart = Math.min(...movable.map((b) => minutesOf(b.startsAt)));
+          const maxEnd = Math.max(...movable.map((b) => minutesOf(b.startsAt) + b.durationMin));
+          const delta = clamp(requested, -minStart, 24 * 60 - maxEnd);
+          const patches = movable.map((b) => ({
+            id: b.id,
+            patch: { startsAt: isoFor(parseISO(b.startsAt), minutesOf(b.startsAt) + delta) },
+          }));
+          return { blocks: applyBlockPatches(s.blocks, patches, 24 * 60) };
         }),
+
+      placeBlockGroup: (ids, anchorId, day, startMin, copy) => {
+        const s = get();
+        const anchor = s.blocks[anchorId];
+        if (!anchor || anchor.pinned || isReadOnlyBlock(anchor)) return [];
+        const selected = [...new Set(ids)]
+          .map((id) => s.blocks[id])
+          .filter((block): block is Block => Boolean(block && !block.pinned && !isReadOnlyBlock(block)));
+        if (!selected.some((block) => block.id === anchorId)) selected.push(anchor);
+
+        const requestedDelta = startMin - minutesOf(anchor.startsAt);
+        const earliest = Math.min(...selected.map((block) => minutesOf(block.startsAt)));
+        const latest = Math.max(...selected.map((block) => minutesOf(block.startsAt) + block.durationMin));
+        const minuteDelta = clamp(
+          requestedDelta,
+          -earliest,
+          24 * 60 - latest
+        );
+        const dayDelta = differenceInCalendarDays(day, parseISO(anchor.startsAt));
+
+        if (!copy) {
+          const patches = selected.map((block) => ({
+            id: block.id,
+            patch: {
+              startsAt: isoFor(addDays(parseISO(block.startsAt), dayDelta), minutesOf(block.startsAt) + minuteDelta),
+            },
+          }));
+          set({ blocks: applyBlockPatches(s.blocks, patches, 24 * 60) });
+          return selected.map((block) => block.id);
+        }
+
+        const blocks = { ...s.blocks };
+        const newIds: string[] = [];
+        const prioritiesByDay = new Map<string, string[]>();
+        for (const source of selected) {
+          const id = uid();
+          const startsAt = isoFor(addDays(parseISO(source.startsAt), dayDelta), minutesOf(source.startsAt) + minuteDelta);
+          blocks[id] = normalizeBlock({
+            ...source, id, startsAt,
+            status: 'planned', closedAt: null, pinned: false,
+            seriesId: null, repeat: 'none', repeatUntil: null, repeatWeekdays: null,
+            source: 'tempo', external: null, syncStatus: 'local',
+          });
+          newIds.push(id);
+          const key = startsAt.slice(0, 10);
+          prioritiesByDay.set(key, [...(prioritiesByDay.get(key) ?? []), id]);
+        }
+        let packed = blocks;
+        for (const [key, priority] of prioritiesByDay) packed = packDay(packed, key, priority, 24 * 60);
+        set({ blocks: packed });
+        return newIds;
+      },
 
       extendBlock: (id, extraMin) => {
         const s = get();
         const b = s.blocks[id];
-        if (!b) return null;
+        if (!b || isReadOnlyBlock(b)) return null;
         s.setDone(id, true);
         const day = parseISO(b.startsAt);
         const nowMin = snap(new Date().getHours() * 60 + new Date().getMinutes());
@@ -604,17 +705,17 @@ export const useStore = create<State>()(
         });
       },
 
-      scheduleSeries: (taskId, dates, startMin, durationMin) => {
+      scheduleSeries: (taskId, occurrences, durationMin) => {
         const s = get();
         const task = s.tasks.find((t) => t.id === taskId);
-        if (!task || !dates.length) return;
+        if (!task || !occurrences.length) return;
         const list = s.lists.find((l) => l.id === task.listId);
         const color = task.color ?? list?.color ?? PALETTE[0];
-        const seriesId = dates.length > 1 ? uid() : null;
-        for (const d of dates) {
+        const seriesId = occurrences.length > 1 ? uid() : null;
+        for (const occurrence of occurrences) {
           s.addBlock({
             taskId, title: task.title, color,
-            startsAt: isoFor(d, startMin), durationMin,
+            startsAt: isoFor(occurrence.date, occurrence.startMin), durationMin,
             kind: 'task', status: 'planned', closedAt: null,
             pinned: false, seriesId, notes: '',
           });
@@ -642,18 +743,83 @@ export const useStore = create<State>()(
     }),
     {
       name: 'tempo-v3',
-      version: 4,
-      migrate: (persisted: any) => ({
-        ...persisted,
-        settings: {
-          ...DEFAULT_SETTINGS,
-          ...(persisted?.settings ?? {}),
-          // El default viejo era 30; ahora arranca en 10.
-          defaultBlockMin: persisted?.settings?.defaultBlockMin === 30 ? 10 : persisted?.settings?.defaultBlockMin ?? 10,
-          autoplan: { ...DEFAULT_SETTINGS.autoplan, ...(persisted?.settings?.autoplan ?? {}) },
-          // settings.autoplan ya trae reassign/reassignMin por el merge de arriba
-        },
-      }),
+      version: 7,
+      migrate: (persisted: any) => {
+        const oldLists: List[] = persisted?.lists ?? [];
+        const oldTasks: Task[] = persisted?.tasks ?? [];
+        const taskById = new Map(oldTasks.map((task) => [task.id, task]));
+        const routineListIds = new Map<string, string>();
+        const lists: List[] = oldLists.map((list) => ({ ...list, scope: 'todo' as const }));
+        for (const task of oldTasks) {
+          const routine = Boolean(task.recurring || task.repeat !== 'none');
+          if (!routine || routineListIds.has(task.listId)) continue;
+          const source = oldLists.find((list) => list.id === task.listId);
+          const id = uid();
+          routineListIds.set(task.listId, id);
+          lists.push({
+            id,
+            name: source?.name ?? 'Rutinas',
+            color: source?.color ?? PALETTE[6],
+            order: routineListIds.size - 1,
+            collapsed: false,
+            scope: 'routine',
+          });
+        }
+        const tasks = oldTasks.map((task) => {
+          const recurring = Boolean(task.recurring || task.repeat !== 'none');
+          return {
+            ...task,
+            listId: recurring ? routineListIds.get(task.listId) ?? task.listId : task.listId,
+            recurring,
+            priority: task.priority ?? 'normal',
+            plannedDate: task.plannedDate ?? null,
+            dueDate: task.dueDate ?? null,
+            inbox: task.inbox ?? false,
+            // A partir de v7 la regla vive en cada bloque/serie.
+            repeat: 'none' as const,
+            repeatUntil: null,
+            repeatWeekdays: null,
+          };
+        });
+        const blocks = Object.fromEntries(Object.entries(persisted?.blocks ?? {}).map(([id, raw]) => {
+          const block = raw as Block;
+          const oldTask = block.taskId ? taskById.get(block.taskId) : null;
+          const oldRepeat = block.seriesId && oldTask?.repeat && oldTask.repeat !== 'none' ? oldTask.repeat : 'none';
+          return [id, {
+            ...block,
+            icon: block.icon ?? null,
+            repeat: block.repeat ?? oldRepeat,
+            repeatUntil: block.repeatUntil ?? oldTask?.repeatUntil ?? null,
+            repeatWeekdays: block.repeatWeekdays ?? oldTask?.repeatWeekdays ?? null,
+          }];
+        }));
+        return {
+          ...persisted,
+          lists,
+          tasks,
+          blocks,
+          settings: {
+            ...DEFAULT_SETTINGS,
+            ...(persisted?.settings ?? {}),
+            defaultBlockMin: persisted?.settings?.defaultBlockMin === 30 ? 10 : persisted?.settings?.defaultBlockMin ?? 10,
+            autoplan: { ...DEFAULT_SETTINGS.autoplan, ...(persisted?.settings?.autoplan ?? {}) },
+          },
+        };
+      },
+      /** Las preferencias nuevas reciben su valor por defecto aunque la persona
+       * ya tenga datos guardados con la misma versión del esquema. */
+      merge: (persisted, current) => {
+        const saved = (persisted ?? {}) as Partial<State>;
+        return {
+          ...current,
+          ...saved,
+          settings: {
+            ...current.settings,
+            ...(saved.settings ?? {}),
+            autoplan: { ...current.settings.autoplan, ...(saved.settings?.autoplan ?? {}) },
+          },
+        };
+      },
       /**
        * Red de seguridad: al abrir la app redondeamos todo a la grilla de 10 min.
        * Así ningún bloque raro guardado por una versión anterior sobrevive.
@@ -663,14 +829,25 @@ export const useStore = create<State>()(
         const blocks: Record<string, Block> = {};
         let dirty = false;
         for (const [id, b] of Object.entries(state.blocks ?? {})) {
-          const fixed = normalize(b as Block);
-          if (fixed.startsAt !== (b as Block).startsAt || fixed.durationMin !== (b as Block).durationMin) dirty = true;
+          const fixed = normalizeBlock(b as Block);
+          if (
+            fixed.startsAt !== (b as Block).startsAt || fixed.durationMin !== (b as Block).durationMin ||
+            fixed.source !== (b as Block).source || fixed.external !== (b as Block).external ||
+            fixed.syncStatus !== (b as Block).syncStatus
+          ) dirty = true;
           blocks[id] = fixed;
         }
-        const tasks = (state.tasks ?? []).map((t) =>
-          t.estimatedMin === null ? t : { ...t, estimatedMin: Math.max(SLOT_MIN, snap(t.estimatedMin)) }
-        );
-        if (dirty || tasks.some((t, i) => t.estimatedMin !== state.tasks[i]?.estimatedMin)) {
+        const completed = new Set(Object.values(state.blocks ?? {})
+          .filter((block) => block.status === 'done' && block.taskId)
+          .map((block) => block.taskId as string));
+        const tasks = (state.tasks ?? []).map((t) => ({
+          ...t,
+          estimatedMin: t.estimatedMin === null ? null : Math.max(SLOT_MIN, snap(t.estimatedMin)),
+          archived: Boolean(t.archived || (!t.recurring && completed.has(t.id))),
+        }));
+        if (dirty || tasks.some((t, i) =>
+          t.estimatedMin !== state.tasks[i]?.estimatedMin || t.archived !== state.tasks[i]?.archived
+        )) {
           useStore.setState({ blocks, tasks });
         }
       },
@@ -697,11 +874,13 @@ interface UIStore {
   multi: string[];
   focusedBlockId: string | null;
   focusedTaskId: string | null;
+  clipboardIds: string[];
   setTool: (t: Tool) => void;
   setRange: (r: RangeSelection | null) => void;
   setMulti: (ids: string[]) => void;
   focusBlock: (id: string | null) => void;
   focusTask: (id: string | null) => void;
+  setClipboard: (ids: string[]) => void;
   clearSelection: () => void;
 }
 
@@ -711,11 +890,13 @@ export const useUI = create<UIStore>((set) => ({
   multi: [],
   focusedBlockId: null,
   focusedTaskId: null,
+  clipboardIds: [],
   setTool: (tool) => set({ tool, range: null, multi: [] }),
   setRange: (range) => set({ range, multi: [] }),
   setMulti: (multi) => set({ multi, range: null }),
   focusBlock: (focusedBlockId) => set({ focusedBlockId, focusedTaskId: null }),
   focusTask: (focusedTaskId) => set({ focusedTaskId, focusedBlockId: null }),
+  setClipboard: (clipboardIds) => set({ clipboardIds }),
   clearSelection: () => set({ range: null, multi: [], focusedBlockId: null, focusedTaskId: null }),
 }));
 
@@ -734,10 +915,25 @@ export interface DragState {
   durationMin: number;
   dayIndex: number;
   startMin: number;
+  /** Posición continua para que la vista siga al puntero; startMin conserva el snap. */
+  visualStartMin?: number;
+  visualDurationMin?: number;
+  /** Última posición conocida: permite renderizar también el primer frame del gesto. */
+  pointerClientX?: number;
+  pointerClientY?: number;
+  /** El puntero está sobre un destino donde se puede soltar. */
+  overGrid?: boolean;
   /** Ancla para arrastres que crecen en dos direcciones. */
   anchorMin: number;
   anchorDayIndex: number;
   moved: boolean;
+  /** Intención al soltar sobre otro bloque, derivada de la mitad bajo el puntero. */
+  insertion?: 'before' | 'after' | null;
+  insertionTarget?: string | null;
+  /** Selección que acompaña al bloque ancla durante un movimiento. */
+  groupIds?: string[];
+  /** Ctrl/Cmd + arrastre crea copias aisladas en vez de mover originales. */
+  copy?: boolean;
 }
 
 interface DragStore {

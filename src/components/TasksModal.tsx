@@ -3,9 +3,6 @@ import { useStore } from '../store';
 import { PALETTE } from '../lib/themes';
 import { durationLabel } from '../lib/time';
 import { Btn, ColorPicker, ConfirmModal, Field, Modal, NumField, Segmented, Tabs, inputCls } from './Modal';
-import { UNTIL_PRESETS, WEEKDAY_LABELS, countSeries } from '../lib/repeat';
-import { dateKey } from '../lib/time';
-import type { RepeatMode } from '../types';
 import type { Task } from '../types';
 
 export function TasksModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -16,40 +13,53 @@ export function TasksModal({ open, onClose }: { open: boolean; onClose: () => vo
   const [activeList, setActiveList] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<string | null>(null);
   const [editingList, setEditingList] = useState<string | null>(null);
-  const [draft, setDraft] = useState('');
   const [confirm, setConfirm] = useState<{ kind: 'task' | 'list'; id: string } | null>(null);
+  const [section, setSection] = useState<'todo' | 'routine' | 'archive'>('todo');
+  const [query, setQuery] = useState('');
+  const [priority, setPriority] = useState('all');
+  const [duration, setDuration] = useState('all');
 
-  const sortedLists = useMemo(() => [...lists].sort((a, b) => a.order - b.order), [lists]);
-  const current = activeList ?? sortedLists[0]?.id ?? null;
+  const sortedLists = useMemo(() => [...lists]
+    .filter((l) => section === 'archive' || l.scope === section)
+    .sort((a, b) => a.order - b.order), [lists, section]);
+  const current = activeList && sortedLists.some((l) => l.id === activeList) ? activeList : sortedLists[0]?.id ?? null;
   const currentList = sortedLists.find((l) => l.id === current);
   const items = useMemo(
-    () => tasks.filter((t) => t.listId === current && !t.archived).sort((a, b) => a.order - b.order),
-    [tasks, current]
+    () => tasks.filter((t) => query.trim() ? sortedLists.some((l) => l.id === t.listId) : t.listId === current)
+      .filter((t) => section === 'archive' ? t.archived : !t.archived && t.recurring === (section === 'routine'))
+      .filter((t) => !query.trim() || `${t.title} ${t.notes}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+      .filter((t) => priority === 'all' || t.priority === priority)
+      .filter((t) => duration === 'all' || (duration === 'short' ? (t.estimatedMin ?? 30) <= 30 : duration === 'medium' ? (t.estimatedMin ?? 60) <= 60 : (t.estimatedMin ?? 0) > 60))
+      .sort((a, b) => a.order - b.order),
+    [tasks, current, section, query, priority, duration, sortedLists]
   );
-
-  const create = () => {
-    const text = draft.trim();
-    if (!text || !current) return;
-    addTask(current, text);
-    setDraft('');
-  };
 
   return (
     <>
       <Modal
         open={open}
         onClose={onClose}
-        title="Tareas"
-        subtitle="Agrupá, coloreá y definí duraciones. Después arrastralas a la agenda."
+        title="Tareas y rutinas"
+        subtitle="Separá pendientes únicos de hábitos y actividades repetitivas."
         size="lg"
       >
+        <Tabs
+          active={section}
+          onChange={setSection}
+          tabs={[
+            { id: 'todo' as const, label: 'To-Do' },
+            { id: 'routine' as const, label: 'Rutinas' },
+            { id: 'archive' as const, label: `Archivo (${tasks.filter((t) => t.archived).length})` },
+          ]}
+        />
         <div className="flex min-h-[26rem] flex-col sm:flex-row">
-          {/* Grupos */}
+          {/* Clasificaciones */}
           <nav className="shrink-0 border-b border-line p-3 sm:w-52 sm:border-b-0 sm:border-r">
-            <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Grupos</p>
+            <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Clasificaciones</p>
             <ul className="flex gap-1.5 overflow-x-auto sm:block sm:space-y-0.5 sm:overflow-visible">
               {sortedLists.map((l) => {
-                const n = tasks.filter((t) => t.listId === l.id && !t.archived).length;
+                const n = tasks.filter((t) => t.listId === l.id)
+                  .filter((t) => section === 'archive' ? t.archived : !t.archived && t.recurring === (section === 'routine')).length;
                 const on = l.id === current;
                 return (
                   <li key={l.id} className="shrink-0">
@@ -67,17 +77,20 @@ export function TasksModal({ open, onClose }: { open: boolean; onClose: () => vo
                 );
               })}
             </ul>
-            <div className="mt-2 flex gap-1.5">
-              <Btn onClick={() => { const id = addList('Nuevo grupo'); setActiveList(id); setEditingList(id); }}>
-                + Grupo
-              </Btn>
-              {currentList && <Btn onClick={() => setEditingList(currentList.id)}>Editar</Btn>}
+            <div className="mt-2 grid grid-cols-2 gap-1.5">
+              <button
+                className="col-span-2 w-full rounded-lg border border-line px-2 py-1.5 text-[12px] text-muted transition-colors hover:border-[var(--accent)] hover:text-ink"
+                onClick={() => { const id = addList('Nueva clasificación', section === 'routine' ? 'routine' : 'todo'); setActiveList(id); setEditingList(id); }}
+              >
+                + Clasificación
+              </button>
+              {currentList && <button className="rounded-lg border border-line px-2 py-1.5 text-[12px] text-muted hover:text-ink" onClick={() => setEditingList(currentList.id)}>Editar</button>}
               {currentList && sortedLists.length > 1 && (
                 <button
                   onClick={() => setConfirm({ kind: 'list', id: currentList.id })}
-                  aria-label="Eliminar grupo"
-                  title="Eliminar grupo"
-                  className="rounded-lg border border-line px-2 py-1.5 text-muted transition-colors hover:border-[var(--now)] hover:text-[var(--now)]"
+                  aria-label="Eliminar clasificación"
+                  title="Eliminar clasificación"
+                  className="grid min-w-0 place-items-center rounded-lg border border-line px-2 py-1.5 text-muted transition-colors hover:border-[var(--now)] hover:text-[var(--now)]"
                 >
                   <TrashIcon />
                 </button>
@@ -85,22 +98,28 @@ export function TasksModal({ open, onClose }: { open: boolean; onClose: () => vo
             </div>
           </nav>
 
-          {/* Tareas del grupo */}
+          {/* Tareas de la clasificación */}
           <div className="min-w-0 flex-1 p-3">
-            <div className="mb-2 flex gap-2">
-              <input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && create()}
-                placeholder="Nueva tarea…"
-                className={inputCls}
-              />
-              <Btn variant="primary" onClick={create} disabled={!draft.trim()}>Agregar</Btn>
+            <div className="mb-2 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por nombre o notas…" className={inputCls} />
+              <select value={priority} onChange={(e) => setPriority(e.target.value)} className={inputCls} aria-label="Filtrar prioridad">
+                <option value="all">Toda prioridad</option><option value="urgent">Urgente</option><option value="high">Alta</option><option value="normal">Normal</option><option value="low">Baja</option>
+              </select>
+              <select value={duration} onChange={(e) => setDuration(e.target.value)} className={inputCls} aria-label="Filtrar duración">
+                <option value="all">Toda duración</option><option value="short">Hasta 30 min</option><option value="medium">Hasta 1 h</option><option value="long">Más de 1 h</option>
+              </select>
             </div>
+            {section !== 'archive' && <div className="mb-2 flex justify-end">
+              <Btn variant="primary" onClick={() => {
+                if (!current) return;
+                const id = addTask(current, section === 'routine' ? 'Nueva rutina' : 'Nueva tarea', { recurring: section === 'routine' });
+                setEditingTask(id);
+              }}>Agregar</Btn>
+            </div>}
 
             {items.length === 0 ? (
               <p className="px-1 py-8 text-center text-[12.5px] text-muted">
-                Este grupo está vacío. Escribí arriba para sumar la primera tarea.
+                {section === 'archive' ? 'No hay elementos archivados en esta clasificación.' : `Esta clasificación todavía no tiene ${section === 'todo' ? 'tareas' : 'rutinas'}.`}
               </p>
             ) : (
               <ul className="space-y-1">
@@ -108,9 +127,10 @@ export function TasksModal({ open, onClose }: { open: boolean; onClose: () => vo
                   <li key={t.id}>
                     <TaskRow
                       task={t}
-                      groupColor={currentList?.color ?? PALETTE[0]}
+                      groupColor={lists.find((l) => l.id === t.listId)?.color ?? PALETTE[0]}
                       onEdit={() => setEditingTask(t.id)}
                       onDelete={() => setConfirm({ kind: 'task', id: t.id })}
+                      archived={section === 'archive'}
                     />
                   </li>
                 ))}
@@ -118,8 +138,11 @@ export function TasksModal({ open, onClose }: { open: boolean; onClose: () => vo
             )}
 
             <p className="mt-3 px-1 text-[11px] leading-snug text-muted">
-              Sin duración fija, la tarea toma la duración por defecto al agendarla y podés estirarla después.
-              Las recurrentes (↻) nunca se gastan.
+              {section === 'todo'
+                ? 'Cada To-Do sigue disponible hasta que lo completes. Al completar su bloque pasa al Archivo; si queda pendiente, no se pierde.'
+                : section === 'routine'
+                  ? 'Las rutinas permanecen disponibles. La frecuencia se define en cada bloque de la agenda.'
+                  : 'Restaurá un elemento si necesitás volver a usarlo.'}
             </p>
           </div>
         </div>
@@ -153,8 +176,8 @@ export function TrashIcon() {
 }
 
 function TaskRow({
-  task, groupColor, onEdit, onDelete,
-}: { task: Task; groupColor: string; onEdit: () => void; onDelete: () => void }) {
+  task, groupColor, onEdit, onDelete, archived,
+}: { task: Task; groupColor: string; onEdit: () => void; onDelete: () => void; archived: boolean }) {
   const updateTask = useStore((s) => s.updateTask);
   const color = task.color ?? groupColor;
   return (
@@ -166,14 +189,14 @@ function TaskRow({
       <span className="tabular shrink-0 font-mono text-[10.5px] text-muted">
         {task.estimatedMin ? durationLabel(task.estimatedMin) : 'libre'}
       </span>
-      <button
-        onClick={() => updateTask(task.id, { recurring: !task.recurring })}
-        title={task.recurring ? 'Recurrente' : 'Marcar como recurrente'}
-        className="shrink-0 rounded px-1 text-[12px]"
-        style={{ color: task.recurring ? color : 'var(--muted)', opacity: task.recurring ? 1 : 0.45 }}
-      >
-        ↻
-      </button>
+      <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] text-muted">
+        {task.recurring ? 'Rutina' : task.priority === 'urgent' ? 'Urgente' : task.priority === 'high' ? 'Alta' : 'To-Do'}
+      </span>
+      {!task.recurring && (task.plannedDate || task.dueDate) && <span className="hidden rounded-md bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-muted sm:inline">
+        {task.dueDate ? `vence ${task.dueDate.slice(8, 10)}/${task.dueDate.slice(5, 7)}` : task.plannedDate?.slice(5).split('-').reverse().join('/')}
+      </span>}
+      {archived && <button onClick={() => updateTask(task.id, { archived: false })}
+        className="shrink-0 rounded px-1.5 py-1 text-[12px] font-medium text-muted hover:text-ink">Restaurar</button>}
       <button onClick={onEdit} className="shrink-0 rounded px-1.5 py-1 text-[12px] text-muted hover:text-ink">
         Editar
       </button>
@@ -196,7 +219,6 @@ export function TaskEditModal({
   const lists = useStore((s) => s.lists);
   const updateTask = useStore((s) => s.updateTask);
   const removeTask = useStore((s) => s.removeTask);
-  const [tab, setTab] = useState<'general' | 'repeat'>('general');
   const [askDelete, setAskDelete] = useState(false);
 
   if (!task) return null;
@@ -214,29 +236,42 @@ export function TaskEditModal({
             <Btn variant="danger" onClick={() => (onDelete ? onDelete(task.id) : setAskDelete(true))}>
               Eliminar
             </Btn>
+            {!task.archived && <Btn onClick={() => { updateTask(task.id, { archived: true }); onClose(); }}>
+              Archivar
+            </Btn>}
             <Btn variant="primary" onClick={onClose}>Listo</Btn>
           </>
         }
       >
-        <Tabs
-          active={tab}
-          onChange={setTab}
-          tabs={[
-            { id: 'general' as const, label: 'General' },
-            { id: 'repeat' as const, label: 'Repetición' },
-          ]}
-        />
-
-        {tab === 'general' ? (
-          <div className="space-y-4 p-5">
+        <div className="space-y-4 p-5">
             <Field label="Nombre">
               <input
                 autoFocus
                 value={task.title}
                 onChange={(e) => updateTask(task.id, { title: e.target.value })}
+                onFocus={(e) => e.currentTarget.select()}
                 className={inputCls}
               />
             </Field>
+
+            <Field label="Tipo" hint={task.recurring ? 'Las rutinas se reutilizan y pueden generar una serie.' : 'Los To-Do son únicos y se archivan al completarlos.'}>
+              <Segmented
+                value={task.recurring ? 'routine' : 'todo'}
+                onChange={(value) => updateTask(task.id, { recurring: value === 'routine' })}
+                options={[{ id: 'todo', label: 'To-Do' }, { id: 'routine', label: 'Rutina' }]}
+              />
+            </Field>
+
+            {!task.recurring && <>
+              <Field label="Prioridad"><Segmented value={task.priority} onChange={(value) => updateTask(task.id, { priority: value as Task['priority'] })}
+                options={[{ id: 'low', label: 'Baja' }, { id: 'normal', label: 'Normal' }, { id: 'high', label: 'Alta' }, { id: 'urgent', label: 'Urgente' }]} /></Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Mostrar en Hoy"><input type="date" value={task.plannedDate ?? ''} onChange={(e) => updateTask(task.id, { plannedDate: e.target.value || null, inbox: false })} className={`${inputCls} font-mono`} /></Field>
+                <Field label="Fecha límite"><input type="date" value={task.dueDate ?? ''} onChange={(e) => updateTask(task.id, { dueDate: e.target.value || null })} className={`${inputCls} font-mono`} /></Field>
+              </div>
+              <label className="flex items-center gap-2 rounded-lg border border-line px-3 py-2.5 text-[12px]"><input type="checkbox" checked={task.inbox}
+                onChange={(e) => updateTask(task.id, { inbox: e.target.checked, plannedDate: e.target.checked ? null : task.plannedDate })} className="h-4 w-4 accent-[var(--accent)]" />Guardar en Inbox para clasificar después</label>
+            </>}
 
             <Field label="Duración" hint="Vacío = toma la duración por defecto y la ajustás en la agenda.">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -269,13 +304,13 @@ export function TaskEditModal({
               />
             </Field>
 
-            <Field label="Grupo">
+            <Field label="Clasificación">
               <select
                 value={task.listId}
                 onChange={(e) => updateTask(task.id, { listId: e.target.value })}
                 className={inputCls}
               >
-                {lists.map((l) => (<option key={l.id} value={l.id}>{l.name}</option>))}
+                {lists.filter((l) => l.scope === (task.recurring ? 'routine' : 'todo')).map((l) => (<option key={l.id} value={l.id}>{l.name}</option>))}
               </select>
             </Field>
 
@@ -288,10 +323,8 @@ export function TaskEditModal({
                 className={`${inputCls} resize-y`}
               />
             </Field>
-          </div>
-        ) : (
-          <RepeatTab task={task} />
-        )}
+          <p className="rounded-lg border border-dashed border-line px-3 py-2 text-[11px] leading-snug text-muted">La repetición se configura al abrir un bloque en la agenda. Así podés usar esta misma tarea una vez o con varias frecuencias sin alterar otros eventos.</p>
+        </div>
       </Modal>
 
       {!onDelete && (
@@ -308,112 +341,6 @@ export function TaskEditModal({
   );
 }
 
-function RepeatTab({ task }: { task: Task }) {
-  const updateTask = useStore((s) => s.updateTask);
-  const today = new Date();
-  const n = task.repeat === 'none' ? 0 : countSeries(today, task.repeat, task.repeatUntil, task.repeatWeekdays);
-
-  return (
-    <div className="space-y-4 p-5">
-      <label className="flex items-start gap-2.5 rounded-lg border border-line px-3 py-2.5">
-        <input
-          type="checkbox"
-          checked={task.recurring}
-          onChange={(e) => updateTask(task.id, { recurring: e.target.checked })}
-          className="mt-0.5 h-4 w-4 accent-[var(--accent)]"
-        />
-        <span className="min-w-0">
-          <span className="block text-[13px]">Nunca se gasta ↻</span>
-          <span className="block text-[11px] leading-snug text-muted">
-            Sigue disponible en el panel aunque la agendes o la completes.
-          </span>
-        </span>
-      </label>
-
-      <Field label="Repetir al agendarla" hint="Al arrastrarla a un día se abre una revisión antes de crear la serie.">
-        <Segmented
-          value={task.repeat}
-          onChange={(v) => updateTask(task.id, { repeat: v as RepeatMode })}
-          options={[
-            { id: 'none', label: 'No' },
-            { id: 'daily', label: 'Cada día' },
-            { id: 'weekly', label: 'Semanal' },
-          ]}
-        />
-      </Field>
-
-      {task.repeat === 'weekly' && (
-        <Field label="Qué días" hint="Podés elegir varios. Vacío = el mismo día en que la agendes.">
-          <div className="flex flex-wrap gap-1.5">
-            {WEEKDAY_LABELS.map((label, i) => {
-              const on = (task.repeatWeekdays ?? []).includes(i);
-              return (
-                <button
-                  key={i}
-                  onClick={() => {
-                    const cur = task.repeatWeekdays ?? [];
-                    const next = on ? cur.filter((x) => x !== i) : [...cur, i].sort();
-                    updateTask(task.id, { repeatWeekdays: next.length ? next : null });
-                  }}
-                  className="rounded-md border px-2.5 py-1.5 text-[12px]"
-                  style={{
-                    borderColor: on ? 'var(--accent)' : 'var(--border)',
-                    background: on ? 'var(--accent)' : undefined,
-                    color: on ? 'var(--accent-fg)' : 'var(--muted)',
-                  }}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        </Field>
-      )}
-
-      {task.repeat !== 'none' && (
-        <>
-          <Field label="Hasta cuándo">
-            <div className="flex flex-wrap items-center gap-1.5">
-              {UNTIL_PRESETS.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => updateTask(task.id, { repeatUntil: dateKey(p.add(new Date())) })}
-                  className="rounded-md border border-line px-2.5 py-1.5 text-[12px] text-muted hover:text-ink"
-                >
-                  {p.label}
-                </button>
-              ))}
-              <button
-                onClick={() => updateTask(task.id, { repeatUntil: null })}
-                className="rounded-md border px-2.5 py-1.5 text-[12px]"
-                style={{
-                  borderColor: task.repeatUntil === null ? 'var(--accent)' : 'var(--border)',
-                  color: task.repeatUntil === null ? 'var(--text)' : 'var(--muted)',
-                }}
-              >
-                Siempre
-              </button>
-            </div>
-            <div className="mt-2">
-              <input
-                type="date"
-                value={task.repeatUntil ?? ''}
-                onChange={(e) => updateTask(task.id, { repeatUntil: e.target.value || null })}
-                className="rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 font-mono text-[13px] outline-none"
-              />
-            </div>
-          </Field>
-
-          <p className="rounded-lg border border-dashed border-line px-3 py-2.5 text-[11.5px] leading-snug text-muted">
-            Se van a crear <span className="font-semibold text-ink">{n} bloques</span> al agendarla.
-            {task.repeatUntil === null && ' "Siempre" llega hasta el tope del horizonte; cuando se acabe, volvés a arrastrarla.'}
-          </p>
-        </>
-      )}
-    </div>
-  );
-}
-
 function ListEditModal({
   id, onClose, onDelete,
 }: { id: string | null; onClose: () => void; onDelete: (id: string) => void }) {
@@ -425,11 +352,11 @@ function ListEditModal({
     <Modal
       open
       onClose={onClose}
-      title="Editar grupo"
+      title="Editar clasificación"
       size="sm"
       footer={
         <>
-          <Btn variant="danger" onClick={() => onDelete(list.id)}>Eliminar grupo</Btn>
+          <Btn variant="danger" onClick={() => onDelete(list.id)}>Eliminar clasificación</Btn>
           <Btn variant="primary" onClick={onClose}>Listo</Btn>
         </>
       }
@@ -443,7 +370,7 @@ function ListEditModal({
             className={inputCls}
           />
         </Field>
-        <Field label="Color del grupo" hint="Lo heredan las tareas que no tengan color propio.">
+        <Field label="Color de la clasificación" hint="Lo heredan las tareas que no tengan color propio.">
           <ColorPicker value={list.color} onChange={(c) => c && updateList(list.id, { color: c })} palette={PALETTE} />
         </Field>
       </div>
@@ -475,7 +402,7 @@ function DeleteConfirm({
     const name =
       target.kind === 'task'
         ? tasks.find((t) => t.id === target.id)?.title ?? 'la tarea'
-        : lists.find((l) => l.id === target.id)?.name ?? 'el grupo';
+        : lists.find((l) => l.id === target.id)?.name ?? 'la clasificación';
     return { taskCount: taskIds.length, blockCount: all.length, pending, name };
   }, [target, tasks, lists, blocks]);
 
@@ -495,11 +422,11 @@ function DeleteConfirm({
       open
       onClose={onClose}
       onConfirm={() => (target.kind === 'task' ? removeTask(target.id) : removeList(target.id))}
-      title={target.kind === 'task' ? 'Eliminar tarea' : 'Eliminar grupo'}
+      title={target.kind === 'task' ? 'Eliminar tarea' : 'Eliminar clasificación'}
       message={
         target.kind === 'task'
           ? `Vas a eliminar "${info.name}".`
-          : `Vas a eliminar el grupo "${info.name}" y ${plural(info.taskCount, 'su tarea', 'sus tareas')}.`
+          : `Vas a eliminar la clasificación "${info.name}" y ${plural(info.taskCount, 'su tarea', 'sus tareas')}.`
       }
       detail={detail}
     />

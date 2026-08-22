@@ -3,6 +3,7 @@ import { useClock, useStore } from '../store';
 import { computeStats } from '../lib/stats';
 import { dateKey, durationLabel, hhmm, minutesOf } from '../lib/time';
 import { Btn, Modal } from './Modal';
+import { isReadOnlyBlock } from '../lib/planning';
 
 export function TodayModal({
   open, onClose, onOpenBlock, onAutoplan,
@@ -46,7 +47,7 @@ export function TodayModal({
           <div className="py-6 text-center">
             <p className="text-[13px] text-muted">El día está vacío.</p>
             <div className="mt-3">
-              <Btn variant="primary" onClick={() => { onClose(); onAutoplan(); }}>Planificar con la varita</Btn>
+              <Btn variant="primary" onClick={() => { onClose(); onAutoplan(); }}>Organizar el día</Btn>
             </div>
           </div>
         ) : (
@@ -85,7 +86,7 @@ export function TodayModal({
                   {overdue && (
                     <span className="shrink-0 text-[10px]" style={{ color: 'var(--now)' }}>sin cerrar</span>
                   )}
-                  {b.kind !== 'break' && (
+                  {b.kind !== 'break' && !isReadOnlyBlock(b) && (
                     <button
                       onClick={() => setStatus(b.id, b.status === 'done' ? 'skipped' : b.status === 'skipped' ? 'planned' : 'done')}
                       aria-label="Alternar completado"

@@ -1,9 +1,12 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 export interface LeftoverEntry {
   title: string;
   durationMin: number;
   reason: string;
+  taskId: string | null;
+  color: string;
 }
 
 /** Referencia estable: nunca crear un [] nuevo dentro de un selector de Zustand. */
@@ -17,13 +20,16 @@ interface PlannerLogStore {
   clear: () => void;
 }
 
-/**
- * Vive solo en memoria: es un recordatorio del último plan, no un historial.
- * Se limpia sola al cambiar de día o al volver a planificar.
- */
-export const usePlannerLog = create<PlannerLogStore>((set) => ({
-  leftover: [],
-  dayKey: null,
-  set: (dayKey, leftover) => set({ dayKey, leftover }),
-  clear: () => set({ leftover: [], dayKey: null }),
-}));
+/** Bandeja local del último plan. Persiste recargas, pero solo se muestra en
+ * el día al que pertenece y se reemplaza al volver a organizar. */
+export const usePlannerLog = create<PlannerLogStore>()(
+  persist(
+    (set) => ({
+      leftover: [],
+      dayKey: null,
+      set: (dayKey, leftover) => set({ dayKey, leftover }),
+      clear: () => set({ leftover: [], dayKey: null }),
+    }),
+    { name: 'tempo-planner-log', version: 1 }
+  )
+);

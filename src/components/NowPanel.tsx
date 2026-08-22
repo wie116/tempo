@@ -1,8 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { Block } from '../types';
-import { useClock, useStore } from '../store';
+import { useClock, useDrag, useStore } from '../store';
 import { dateKey, durationLabel, hhmm, minutesOf } from '../lib/time';
 import { EMPTY_LEFTOVER, usePlannerLog } from '../lib/plannerLog';
+import { isReadOnlyBlock } from '../lib/planning';
+import { startPointerGesture } from '../lib/gesture';
 
 const pad = (n: number) => String(Math.floor(n)).padStart(2, '0');
 
@@ -11,14 +13,27 @@ const CX = SIZE / 2;
 const R_OUT = 92;
 const R_IN = 76;
 
-export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void }) {
+export function NowPanel({
+  onOpenBlock, onLocateBlock, onAutoplan, mobileOpen = false, onCloseMobile,
+}: {
+  onOpenBlock: (id: string) => void;
+  onLocateBlock: (id: string) => void;
+  onAutoplan: () => void;
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
+}) {
   const open = useStore((s) => s.settings.rightPanelOpen);
   const setSettings = useStore((s) => s.updateSettings);
   const dayStartHour = useStore((s) => s.settings.dayStartHour);
   const dayEndHour = useStore((s) => s.settings.dayEndHour);
+  const showPendingTray = useStore((s) => s.settings.showPendingTray);
+  const clockStyle = useStore((s) => s.settings.clockStyle);
   const blocks = useStore((s) => s.blocks);
   const setStatus = useStore((s) => s.setStatus);
   const now = useClock((s) => s.now);
+  const beginDrag = useDrag((s) => s.begin);
+  const [showAllUnclosed, setShowAllUnclosed] = useState(false);
+  const [showAllLeftover, setShowAllLeftover] = useState(false);
 
   const d = new Date(now);
   const nowMin = d.getHours() * 60 + d.getMinutes();
@@ -37,11 +52,25 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
     () => today.filter((b) => b.status === 'skipped' && b.kind !== 'break'),
     [today]
   );
+  const unclosed = useMemo(
+    () => Object.values(blocks)
+      .filter((b) =>
+        b.status === 'planned' && b.kind !== 'break' && !isReadOnlyBlock(b) &&
+        new Date(b.startsAt).getTime() + b.durationMin * 60_000 <= now
+      )
+      .sort((a, b) => b.startsAt.localeCompare(a.startsAt)),
+    [blocks, now]
+  );
   // Nunca devolver un [] literal desde el selector: crearía una referencia
   // nueva en cada render y Zustand entraría en un bucle de actualizaciones.
   const plannerDayKey = usePlannerLog((s) => s.dayKey);
   const plannerLeftover = usePlannerLog((s) => s.leftover);
   const leftover = plannerDayKey === todayKey ? plannerLeftover : EMPTY_LEFTOVER;
+  const visibleLeftover = useMemo(
+    () => leftover.filter((entry) => !entry.taskId || !Object.values(blocks)
+      .some((block) => block.taskId === entry.taskId && block.status === 'planned')),
+    [leftover, blocks]
+  );
   const clearLeftover = usePlannerLog((s) => s.clear);
 
   const current: Block | undefined = today.find(
@@ -49,9 +78,9 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
   );
   const next = today.find((b) => minutesOf(b.startsAt) > nowMin);
 
-  if (!open) {
+  if (!open && !mobileOpen) {
     return (
-      <aside className="hidden w-12 shrink-0 flex-col items-center gap-3 border-l border-line bg-surface py-3 lg:flex">
+      <aside className="hidden w-12 shrink-0 flex-col items-center gap-3 border-l border-line bg-surface py-3 xl:flex">
         <button
           onClick={() => setSettings({ rightPanelOpen: true })}
           aria-label="Abrir el reloj"
@@ -67,6 +96,7 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
         {current && (
           <span className="h-2.5 w-2.5 rounded-full" style={{ background: current.kind === 'break' ? 'var(--muted)' : current.color }} />
         )}
+        {(visibleLeftover.length > 0 || unclosed.length > 0) && <span className="h-2 w-2 rounded-full" style={{ background: 'var(--now)' }} title="Hay actividad pendiente" />}
       </aside>
     );
   }
@@ -77,6 +107,11 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
   const blockProgress = current ? 1 - remaining / (current.durationMin * 60) : 0;
   const isBreak = current?.kind === 'break';
   const ring = isBreak ? 'var(--muted)' : current ? current.color : 'var(--border)';
+  const workBlocks = today.filter((block) => block.kind !== 'break');
+  const scheduledMin = workBlocks.reduce((sum, block) => sum + block.durationMin, 0);
+  const completedMin = workBlocks.filter((block) => block.status === 'done').reduce((sum, block) => sum + block.durationMin, 0);
+  const completedCount = workBlocks.filter((block) => block.status === 'done').length;
+  const pendingCount = workBlocks.filter((block) => block.status === 'planned').length;
 
   /* Anillo exterior: la jornada entera. Interior: el bloque en curso. */
   const dayStartMin = dayStartHour * 60;
@@ -88,12 +123,27 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
   const hours = Array.from({ length: dayEndHour - dayStartHour + 1 }, (_, i) => dayStartHour + i);
 
   return (
-    <aside className="hidden w-72 shrink-0 flex-col border-l border-line bg-surface lg:flex">
-      <div className="flex shrink-0 items-center justify-between border-b border-line px-3.5 py-3">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Ahora</h2>
+    <>
+    {mobileOpen && (
+      <button
+        className="fixed inset-0 z-40 bg-black/35 xl:hidden"
+        onClick={onCloseMobile}
+        aria-label="Cerrar panel de actividad"
+      />
+    )}
+    <aside className={mobileOpen
+      ? 'fixed inset-y-0 right-0 z-50 flex w-[min(22rem,92vw)] flex-col border-l border-line bg-surface shadow-2xl xl:hidden'
+      : 'hidden w-72 shrink-0 flex-col border-l border-line bg-surface xl:flex'}>
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-3.5 py-3">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Actividad</h2>
+        <button onClick={() => setSettings({ showPendingTray: !showPendingTray })} aria-pressed={showPendingTray}
+          className="ml-auto flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[10.5px] font-medium"
+          style={{ borderColor: visibleLeftover.length ? 'var(--now)' : 'var(--border)', color: visibleLeftover.length ? 'var(--now)' : 'var(--muted)', background: showPendingTray ? 'var(--surface-2)' : undefined }}>
+          Pendientes {visibleLeftover.length > 0 && <span className="rounded-full px-1.5 font-mono" style={{ background: 'color-mix(in oklab, var(--now) 16%, transparent)' }}>{visibleLeftover.length}</span>}
+        </button>
         <button
-          onClick={() => setSettings({ rightPanelOpen: false })}
-          aria-label="Plegar el reloj"
+          onClick={() => mobileOpen ? onCloseMobile?.() : setSettings({ rightPanelOpen: false })}
+          aria-label={mobileOpen ? 'Cerrar actividad' : 'Plegar el reloj'}
           className="rounded-md p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-ink"
         >
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -103,6 +153,26 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="mb-3 flex rounded-lg bg-surface-2 p-0.5" role="tablist" aria-label="Estilo del reloj">
+          {([
+            ['rings', 'Anillos'], ['focus', 'Enfoque'], ['stats', 'Resumen'],
+          ] as const).map(([id, label]) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={clockStyle === id}
+              onClick={() => setSettings({ clockStyle: id })}
+              className="flex-1 rounded-md px-1.5 py-1.5 text-[10.5px] font-medium transition-colors"
+              style={clockStyle === id
+                ? { background: 'var(--surface)', color: 'var(--text)', boxShadow: '0 1px 2px rgb(0 0 0 / .08)' }
+                : { color: 'var(--muted)' }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {clockStyle === 'rings' && <>
         <div className="relative mx-auto" style={{ width: SIZE, height: SIZE }}>
           <svg className="absolute inset-0 -rotate-90" viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden>
             {/* Marcas: una por hora de tu jornada */}
@@ -158,15 +228,60 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
                 {pad(d.getHours())}:{pad(d.getMinutes())}
               </p>
               {current ? (
-                <p className="tabular mt-1.5 font-mono text-[14px] font-semibold" style={{ color: ring }}>
-                  −{pad(remaining / 60)}:{pad(remaining % 60)}
-                </p>
+                <>
+                  <p className="mt-1 text-[9px] uppercase tracking-[0.14em] text-muted">Restan</p>
+                  <p className="tabular font-mono text-[14px] font-semibold" style={{ color: ring }}>
+                    {pad(remaining / 60)}:{pad(remaining % 60)}
+                  </p>
+                </>
               ) : (
-                <p className="tabular mt-1.5 font-mono text-[13px] text-muted">:{pad(d.getSeconds())}</p>
+                <p className="mt-1.5 text-[11px] text-muted">Hora actual · :{pad(d.getSeconds())}</p>
               )}
             </div>
           </div>
         </div>
+        </>}
+
+        {clockStyle === 'focus' && (
+          <div className="mx-auto flex h-[208px] w-[208px] flex-col justify-center rounded-3xl border border-line bg-surface-2 p-5 text-center">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted">
+              {current ? (isBreak ? 'Pausa en curso' : 'Tiempo restante') : 'Hora actual'}
+            </p>
+            <p className="tabular mt-2 font-mono text-[42px] font-bold leading-none tracking-tighter" style={{ color: current ? ring : undefined }}>
+              {current ? `${pad(remaining / 60)}:${pad(remaining % 60)}` : `${pad(d.getHours())}:${pad(d.getMinutes())}`}
+            </p>
+            {current ? <>
+              <div className="mt-5 h-2 overflow-hidden rounded-full bg-[var(--grid-line-strong)]">
+                <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${blockProgress * 100}%`, background: ring }} />
+              </div>
+              <div className="mt-2 flex justify-between font-mono text-[10px] text-muted">
+                <span>{Math.floor(blockProgress * current.durationMin)} min hechos</span>
+                <span>{current.durationMin} min</span>
+              </div>
+            </> : <p className="mt-3 text-[11.5px] text-muted">{next ? `${next.title} a las ${hhmm(minutesOf(next.startsAt))}` : 'Sin más bloques previstos'}</p>}
+          </div>
+        )}
+
+        {clockStyle === 'stats' && (
+          <div className="mx-auto min-h-[208px] w-full rounded-3xl border border-line bg-surface-2 p-4">
+            <div className="flex items-end justify-between border-b border-line pb-3">
+              <div>
+                <p className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-muted">Hora actual</p>
+                <p className="tabular mt-1 font-mono text-[30px] font-bold leading-none">{pad(d.getHours())}:{pad(d.getMinutes())}</p>
+              </div>
+              <p className="text-right text-[11px] text-muted">{current ? `${Math.round(blockProgress * 100)}% del bloque actual` : 'Sin bloque en curso'}</p>
+            </div>
+            <div className="grid grid-cols-3 gap-2 pt-4 text-center">
+              <div><p className="font-mono text-[20px] font-bold">{durationLabel(scheduledMin)}</p><p className="text-[9.5px] text-muted">planificado</p></div>
+              <div><p className="font-mono text-[20px] font-bold">{completedCount}</p><p className="text-[9.5px] text-muted">completados</p></div>
+              <div><p className="font-mono text-[20px] font-bold">{pendingCount}</p><p className="text-[9.5px] text-muted">pendientes</p></div>
+            </div>
+            <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[var(--grid-line-strong)]">
+              <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${scheduledMin ? Math.min(100, completedMin / scheduledMin * 100) : 0}%` }} />
+            </div>
+            <p className="mt-1.5 text-center text-[10px] text-muted">{durationLabel(completedMin)} completados de {durationLabel(scheduledMin)}</p>
+          </div>
+        )}
 
         {current ? (
           <div className="mt-5">
@@ -177,7 +292,7 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
               onClick={() => onOpenBlock(current.id)}
               className="mt-1 block w-full text-left text-[19px] font-semibold leading-snug tracking-tight"
             >
-              {current.title}
+              {current.icon && <span className="mr-1" aria-hidden>{current.icon}</span>}{current.title}
             </button>
             <p className="tabular mt-1 font-mono text-[12.5px] text-muted">
               {hhmm(start)}–{hhmm(start + current.durationMin)} · {durationLabel(current.durationMin)}
@@ -189,7 +304,7 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
               </p>
             )}
 
-            {current.kind !== 'break' && (
+            {current.kind !== 'break' && !isReadOnlyBlock(current) && (
               <div className="mt-3.5 flex gap-2">
                 <button
                   onClick={() => setStatus(current.id, current.status === 'done' ? 'planned' : 'done')}
@@ -222,19 +337,60 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
           </div>
         )}
 
-        {(leftover.length > 0 || todaySkipped.length > 0) && (
+        {((showPendingTray && visibleLeftover.length > 0) || todaySkipped.length > 0 || unclosed.length > 0) && (
           <div className="mt-5 border-t border-line pt-3.5">
-            {leftover.length > 0 && (
+            {unclosed.length > 0 && (
+              <div className="mb-4 rounded-xl border p-3" style={{ borderColor: 'color-mix(in oklab, var(--now) 45%, var(--border))' }}>
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--now)' }}>
+                  Quedaron sin cerrar
+                </p>
+                <ul className="space-y-1">
+                  {(showAllUnclosed ? unclosed : unclosed.slice(0, 4)).map((block) => (
+                    <li key={block.id}>
+                      <button onClick={() => onLocateBlock(block.id)} title="Ir al bloque en la agenda" className="flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left text-[12px] hover:bg-surface-2 hover:text-ink">
+                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: block.color }} />
+                        <span className="min-w-0 flex-1 truncate">{block.title}</span>
+                        <span className="font-mono text-[10px] text-muted">
+                          {block.startsAt.slice(0, 10) === todayKey
+                            ? hhmm(minutesOf(block.startsAt) + block.durationMin)
+                            : `${block.startsAt.slice(8, 10)}/${block.startsAt.slice(5, 7)}`}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {unclosed.length > 4 && <button onClick={() => setShowAllUnclosed((value) => !value)} className="mt-2 text-[10.5px] font-medium text-muted hover:text-ink">
+                  {showAllUnclosed ? 'Mostrar menos' : `Ver ${unclosed.length - 4} más`}
+                </button>}
+              </div>
+            )}
+            {showPendingTray && visibleLeftover.length > 0 && (
               <div className="mb-3">
                 <div className="mb-1 flex items-center justify-between">
-                  <p className="text-[11px] uppercase tracking-[0.12em] text-muted">Sin agendar hoy</p>
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-muted">Pendientes por ubicar</p>
                   <button onClick={clearLeftover} className="text-[10.5px] text-muted hover:text-ink">
                     Ocultar
                   </button>
                 </div>
                 <ul className="space-y-1">
-                  {leftover.map((l, i) => (
-                    <li key={i} className="flex items-baseline gap-2 text-[12px]">
+                  {(showAllLeftover ? visibleLeftover : visibleLeftover.slice(0, 4)).map((l, i) => (
+                    <li
+                      key={`${l.taskId ?? l.title}-${i}`}
+                      onPointerDown={(event) => {
+                        if (!l.taskId || event.button !== 0) return;
+                        startPointerGesture(event, {
+                          onDrag: (pointer) => beginDrag({
+                            mode: 'new', taskId: l.taskId!, title: l.title, color: l.color, kind: 'task',
+                            grabOffsetMin: 0, durationMin: l.durationMin,
+                            dayIndex: 0, startMin: 9 * 60, anchorMin: 9 * 60, anchorDayIndex: 0, moved: false,
+                            pointerClientX: pointer.clientX, pointerClientY: pointer.clientY, overGrid: false,
+                          }),
+                        });
+                      }}
+                      className={`flex items-baseline gap-2 rounded-lg border border-line px-2 py-1.5 text-[12px] ${l.taskId ? 'cursor-grab' : ''}`}
+                      style={{ touchAction: 'pan-y' }}
+                    >
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: l.color }} />
                       <span className="min-w-0 flex-1 truncate">{l.title}</span>
                       <span className="tabular shrink-0 font-mono text-[10px] text-muted">
                         {durationLabel(l.durationMin)}
@@ -242,9 +398,15 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
                     </li>
                   ))}
                 </ul>
+                {visibleLeftover.length > 4 && <button onClick={() => setShowAllLeftover((value) => !value)} className="mt-2 text-[10.5px] font-medium text-muted hover:text-ink">
+                  {showAllLeftover ? 'Mostrar menos' : `Ver ${visibleLeftover.length - 4} más`}
+                </button>}
                 <p className="mt-1 text-[10.5px] leading-snug text-muted">
-                  No entraron al planificar. Siguen pendientes en su grupo.
+                  Arrastralas desde acá a la agenda o volvé a organizar.
                 </p>
+                <button onClick={onAutoplan} className="mt-2 w-full rounded-lg border border-line px-2.5 py-2 text-[12px] font-medium text-muted hover:text-ink">
+                  Reorganizar pendientes
+                </button>
               </div>
             )}
             {todaySkipped.length > 0 && (
@@ -274,7 +436,7 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
               onClick={() => onOpenBlock(next.id)}
               className="mt-1 block w-full truncate text-left text-[15px] font-medium"
             >
-              {next.kind === 'break' ? 'Pausa' : next.title}
+              {next.kind === 'break' ? 'Pausa' : <>{next.icon && <span className="mr-1" aria-hidden>{next.icon}</span>}{next.title}</>}
             </button>
             <p className="tabular mt-0.5 font-mono text-[12px] text-muted">
               {hhmm(minutesOf(next.startsAt))} · en {durationLabel(minutesOf(next.startsAt) - nowMin)}
@@ -283,5 +445,6 @@ export function NowPanel({ onOpenBlock }: { onOpenBlock: (id: string) => void })
         )}
       </div>
     </aside>
+    </>
   );
 }

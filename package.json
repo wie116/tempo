@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test": "node scripts/run-planning-tests.mjs",
+    "check:edge": "node scripts/check-edge-functions.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

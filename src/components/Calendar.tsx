@@ -1,18 +1,18 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { isSameDay } from 'date-fns';
+import { useLayoutEffect, useMemo, useRef } from 'react';
+import { isSameDay, parseISO } from 'date-fns';
 import { useClock, useDrag, useStore, useUI } from '../store';
 import {
   SLOT_MIN, clamp, dateKey, durationLabel, fmt, hhmm, hourLabel, isoFor,
   labelEvery, minToPx, minorInterval, minutesOf, pxToMin, snap,
 } from '../lib/time';
 import { DayColumn } from './DayColumn';
+import { insertionAroundTarget } from '../lib/planning';
 
 export function Calendar({
-  days, onOpenBlock, onScheduleSeries,
+  days, onOpenBlock,
 }: {
   days: Date[];
   onOpenBlock: (id: string) => void;
-  onScheduleSeries: (p: { taskId: string; day: Date; startMin: number }) => void;
 }) {
   const settings = useStore((s) => s.settings);
   const updateBlock = useStore((s) => s.updateBlock);
@@ -20,6 +20,7 @@ export function Calendar({
   const addBreak = useStore((s) => s.addBreak);
   const moveChain = useStore((s) => s.moveChain);
   const resizeTop = useStore((s) => s.resizeTop);
+  const placeBlockGroup = useStore((s) => s.placeBlockGroup);
 
   const tool = useUI((s) => s.tool);
   const range = useUI((s) => s.range);
@@ -34,11 +35,13 @@ export function Calendar({
   const colsRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const dayStartMin = settings.dayStartHour * 60;
-  const dayEndMin = settings.dayEndHour * 60;
+  // La grilla siempre representa el día completo. La jornada configurada sólo
+  // se usa para el resaltado visual y para los límites de Organizar.
+  const dayStartMin = 0;
+  const dayEndMin = 24 * 60;
   const totalMin = dayEndMin - dayStartMin;
   const bodyHeight = minToPx(totalMin, settings.slotPx);
-  const hours = Array.from({ length: settings.dayEndHour - settings.dayStartHour }, (_, i) => settings.dayStartHour + i);
+  const hours = Array.from({ length: 24 }, (_, i) => i);
   const minor = minorInterval(settings.slotPx);
   const every = labelEvery(settings.slotPx);
 
@@ -55,74 +58,156 @@ export function Calendar({
 
   const pointToGrid = (clientX: number, clientY: number) => {
     const el = colsRef.current;
-    if (!el) return null;
+    const scroller = scrollRef.current;
+    if (!el || !scroller) return null;
     const r = el.getBoundingClientRect();
     const colW = r.width / days.length;
     const dayIndex = clamp(Math.floor((clientX - r.left) / colW), 0, days.length - 1);
-    const min = dayStartMin + pxToMin(clientY - r.top, settings.slotPx);
+    const viewport = scroller.getBoundingClientRect();
+    const min = dayStartMin + pxToMin(clientY - viewport.top + scroller.scrollTop, settings.slotPx);
     return { dayIndex, min: clamp(min, dayStartMin, dayEndMin) };
   };
 
   /* ---------- Arrastre global ---------- */
-  useEffect(() => {
-    if (!drag) return;
+  const dragging = drag !== null;
+  useLayoutEffect(() => {
+    if (!dragging) return;
+    const cols = colsRef.current;
+    const scroller = scrollRef.current;
+    if (!cols || !scroller) return;
 
-    const onMove = (e: PointerEvent) => {
-      const p = pointToGrid(e.clientX, e.clientY);
-      if (!p) return;
+    // Medimos una sola vez por gesto. El eje vertical usa scrollTop, por lo que
+    // sigue siendo exacto mientras hacemos autoscroll sin forzar layout.
+    const colsRect = cols.getBoundingClientRect();
+    const viewport = scroller.getBoundingClientRect();
+    const metrics = {
+      left: colsRect.left,
+      right: colsRect.right,
+      width: colsRect.width,
+      top: viewport.top,
+      bottom: viewport.bottom,
+    };
+    let frame = 0;
+    let lastPointer = (() => {
+      const d = useDrag.getState().drag;
+      return d?.pointerClientX == null || d.pointerClientY == null
+        ? null
+        : { x: d.pointerClientX, y: d.pointerClientY };
+    })();
 
-      if (drag.mode === 'resizeTop') {
-        // anchorMin guarda el final del bloque: crece hacia arriba sin moverlo.
-        const start = clamp(snap(p.min), dayStartMin, drag.anchorMin - SLOT_MIN);
-        update({ startMin: start, durationMin: drag.anchorMin - start, moved: true });
-      } else if (drag.mode === 'resize') {
-        update({ durationMin: clamp(snap(p.min - drag.startMin), SLOT_MIN, dayEndMin - drag.startMin), moved: true });
-      } else if (drag.mode === 'new') {
-        // Solo cuenta como arrastre si el puntero llegó de verdad a la grilla.
-        const el = colsRef.current;
-        const r = el?.getBoundingClientRect();
-        const inside =
-          !!r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
-        update({
-          dayIndex: p.dayIndex,
-          startMin: clamp(snap(p.min - drag.grabOffsetMin), dayStartMin, dayEndMin - drag.durationMin),
-          moved: drag.moved || inside,
-        });
-      } else if (drag.mode === 'range') {
-        // Crece hacia arriba o hacia abajo desde el punto donde apretaste
-        const a = drag.anchorMin;
-        const b = snap(p.min);
-        update({
-          startMin: Math.min(a, b),
-          durationMin: Math.max(SLOT_MIN, Math.abs(b - a)),
-          dayIndex: drag.anchorDayIndex,
-          moved: true,
-        });
-      } else if (drag.mode === 'box') {
-        update({
-          startMin: Math.min(drag.anchorMin, snap(p.min)),
-          durationMin: Math.max(SLOT_MIN, Math.abs(snap(p.min) - drag.anchorMin)),
-          dayIndex: p.dayIndex,
-          moved: true,
-        });
-      } else {
-        update({
-          dayIndex: p.dayIndex,
-          startMin: clamp(snap(p.min - drag.grabOffsetMin), dayStartMin, dayEndMin - drag.durationMin),
-          moved: true,
-        });
-      }
+    const scheduleFrame = () => {
+      if (!frame) frame = requestAnimationFrame(runFrame);
     };
 
-    const onUp = () => {
+    const autoScroll = (x: number, y: number) => {
+      if (x < metrics.left || x > metrics.right) return false;
+      const edge = 58;
+      let speed = 0;
+      if (y < metrics.top + edge) speed = -18 * (1 - Math.max(0, y - metrics.top) / edge);
+      else if (y > metrics.bottom - edge) speed = 18 * (1 - Math.max(0, metrics.bottom - y) / edge);
+      if (!speed) return false;
+      const before = scroller.scrollTop;
+      scroller.scrollTop = clamp(before + speed, 0, scroller.scrollHeight - scroller.clientHeight);
+      return scroller.scrollTop !== before;
+    };
+
+    const runFrame = () => {
+      frame = 0;
       const d = useDrag.getState().drag;
-      if (d) {
+      const pointer = lastPointer;
+      if (!d || !pointer) return;
+
+      const colW = metrics.width / days.length;
+      const dayIndex = clamp(Math.floor((pointer.x - metrics.left) / colW), 0, days.length - 1);
+      const rawMin = clamp(
+        dayStartMin + pxToMin(pointer.y - metrics.top + scroller.scrollTop, settings.slotPx),
+        dayStartMin,
+        dayEndMin
+      );
+      // Un pequeño margen vertical permite soltar mientras el autoscroll está activo.
+      const overGrid =
+        pointer.x >= metrics.left && pointer.x <= metrics.right &&
+        pointer.y >= metrics.top - 24 && pointer.y <= metrics.bottom + 24;
+
+      if (d.mode === 'resizeTop') {
+        const visualStart = clamp(rawMin, dayStartMin, d.anchorMin - SLOT_MIN);
+        const start = clamp(snap(visualStart), dayStartMin, d.anchorMin - SLOT_MIN);
+        update({
+          startMin: start, durationMin: d.anchorMin - start,
+          visualStartMin: visualStart, visualDurationMin: d.anchorMin - visualStart,
+          pointerClientX: pointer.x, pointerClientY: pointer.y, overGrid, moved: true,
+        });
+      } else if (d.mode === 'resize') {
+        const visualDuration = clamp(rawMin - d.startMin, SLOT_MIN, dayEndMin - d.startMin);
+        const durationMin = clamp(snap(visualDuration), SLOT_MIN, dayEndMin - d.startMin);
+        update({
+          durationMin, visualDurationMin: visualDuration,
+          pointerClientX: pointer.x, pointerClientY: pointer.y, overGrid, moved: true,
+        });
+      } else if (d.mode === 'range' || d.mode === 'box') {
+        const visualStart = Math.min(d.anchorMin, rawMin);
+        const visualDuration = Math.max(SLOT_MIN, Math.abs(rawMin - d.anchorMin));
+        const snappedPointer = snap(rawMin);
+        const startMin = Math.min(d.anchorMin, snappedPointer);
+        const durationMin = Math.max(SLOT_MIN, Math.abs(snappedPointer - d.anchorMin));
+        update({
+          startMin, durationMin, visualStartMin: visualStart, visualDurationMin: visualDuration,
+          dayIndex: d.mode === 'box' ? dayIndex : d.anchorDayIndex,
+          pointerClientX: pointer.x, pointerClientY: pointer.y, overGrid, moved: true,
+        });
+      } else {
+        const targetKey = dateKey(days[dayIndex]);
+        const target = Object.values(useStore.getState().blocks)
+          .filter((block) => !d.groupIds?.includes(block.id) && block.id !== d.blockId && block.startsAt.slice(0, 10) === targetKey)
+          .filter((block) => {
+            const start = minutesOf(block.startsAt);
+            return rawMin >= start && rawMin < start + block.durationMin;
+          })
+          .sort((a, b) => a.durationMin - b.durationMin)[0];
+        const targetInsertion = target
+          ? insertionAroundTarget(rawMin, minutesOf(target.startsAt), target.durationMin, d.durationMin)
+          : null;
+        const insertion = targetInsertion?.position ?? null;
+        const desiredStart = targetInsertion?.startMin ?? rawMin - d.grabOffsetMin;
+        const visualStart = clamp(desiredStart, dayStartMin, dayEndMin - d.durationMin);
+        const startMin = clamp(snap(visualStart), dayStartMin, dayEndMin - d.durationMin);
+        update({
+          dayIndex, startMin, visualStartMin: visualStart,
+          pointerClientX: pointer.x, pointerClientY: pointer.y,
+          overGrid, moved: d.moved || overGrid,
+          insertion,
+          insertionTarget: target?.title ?? null,
+        });
+      }
+
+      if (autoScroll(pointer.x, pointer.y)) scheduleFrame();
+    };
+
+    const onMove = (e: PointerEvent) => {
+      lastPointer = { x: e.clientX, y: e.clientY };
+      scheduleFrame();
+    };
+
+    const finish = (commit: boolean) => {
+      if (frame) cancelAnimationFrame(frame);
+      // No perdemos el último movimiento si pointerup llegó entre dos frames.
+      if (lastPointer) runFrame();
+      const d = useDrag.getState().drag;
+      if (d && commit && d.overGrid !== false) {
         const day = days[clamp(d.dayIndex, 0, days.length - 1)];
 
         if (d.mode === 'resizeTop' && d.blockId) {
           if (d.moved) resizeTop(day, d.blockId, d.startMin);
         } else if ((d.mode === 'move' || d.mode === 'resize') && d.blockId) {
           if (d.moved) {
+            const group = d.groupIds?.length ? d.groupIds : [d.blockId];
+            if (d.mode === 'move' && (group.length > 1 || d.copy)) {
+              const placed = placeBlockGroup(group, d.blockId, day, d.startMin, Boolean(d.copy));
+              useUI.getState().setMulti(placed);
+              useUI.getState().focusBlock(d.copy ? placed[0] ?? null : d.blockId);
+              end();
+              return;
+            }
             const chained =
               d.mode === 'move' &&
               settings.chainMove &&
@@ -136,13 +221,7 @@ export function Calendar({
           if (!d.moved) { /* nada */ }
           else if (d.kind === 'break') addBreak(day, d.startMin, d.durationMin);
           else if (d.taskId) {
-            const task = useStore.getState().tasks.find((t) => t.id === d.taskId);
-            if (task && task.repeat !== 'none') {
-              // Repite: revisamos antes de crear toda la serie, para poder avisar choques.
-              onScheduleSeries({ taskId: d.taskId, day, startMin: d.startMin });
-            } else {
-              blockFromTask(d.taskId, day, d.startMin, d.durationMin);
-            }
+            blockFromTask(d.taskId, day, d.startMin, d.durationMin);
           }
         } else if (d.mode === 'range') {
           // Marcamos la franja y vos elegís qué poner: bloque o pausa
@@ -166,15 +245,32 @@ export function Calendar({
       end();
     };
 
+    const onUp = () => finish(true);
+    const onCancel = () => finish(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    };
+
+    const oldCursor = document.body.style.cursor;
+    const oldSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'grabbing';
+    document.body.style.userSelect = 'none';
+
     window.addEventListener('pointermove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
+    window.addEventListener('pointercancel', onCancel);
+    window.addEventListener('keydown', onKey);
+    scheduleFrame();
     return () => {
+      if (frame) cancelAnimationFrame(frame);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('keydown', onKey);
+      document.body.style.cursor = oldCursor;
+      document.body.style.userSelect = oldSelect;
     };
-  }, [drag?.mode, drag?.blockId, drag?.taskId, drag?.kind, days, settings.slotPx]);
+  }, [dragging, days, dayStartMin, dayEndMin, settings.slotPx, settings.chainMove]);
 
   /* ---------- Apretar en zona vacía ---------- */
   const onEmptyPointerDown = (e: React.PointerEvent) => {
@@ -217,8 +313,17 @@ export function Calendar({
     });
   };
 
-  const ghost = drag && (drag.mode === 'new' || drag.mode === 'range') ? drag : null;
+  const ghost = drag?.overGrid && (drag.mode === 'new' || drag.mode === 'range') ? drag : null;
   const colW = 100 / days.length;
+  const dropConflict = (() => {
+    if (!drag?.overGrid || (drag.mode !== 'move' && drag.mode !== 'new')) return false;
+    const key = dateKey(days[clamp(drag.dayIndex, 0, days.length - 1)]);
+    const endMin = drag.startMin + drag.durationMin;
+    return Object.values(useStore.getState().blocks).some((b) =>
+      b.id !== drag.blockId && !drag.groupIds?.includes(b.id) && b.startsAt.slice(0, 10) === key &&
+      minutesOf(b.startsAt) < endMin && minutesOf(b.startsAt) + b.durationMin > drag.startMin
+    );
+  })();
 
   /* Franja marcada, ya soltada */
   const rangeDayIndex = useMemo(
@@ -259,7 +364,10 @@ export function Calendar({
               <div
                 key={h}
                 className="tabular absolute right-2 -translate-y-1/2 font-mono text-[10.5px] text-muted"
-                style={{ top: minToPx(h * 60 - dayStartMin, settings.slotPx) }}
+                style={{
+                  top: minToPx(h * 60 - dayStartMin, settings.slotPx),
+                  opacity: h < settings.dayStartHour || h >= settings.dayEndHour ? 0.48 : 1,
+                }}
               >
                 {hourLabel(h)}
               </div>
@@ -268,9 +376,10 @@ export function Calendar({
 
           <div
             ref={colsRef}
+            data-testid="calendar-grid"
             className="relative flex flex-1"
             onPointerDown={onEmptyPointerDown}
-            style={{ touchAction: 'pan-y', cursor: tool === 'box' ? 'crosshair' : undefined }}
+            style={{ touchAction: drag ? 'none' : 'pan-y', cursor: tool === 'box' ? 'crosshair' : undefined }}
           >
             <div className="pointer-events-none absolute inset-0">
               {hours.map((h) => (
@@ -289,6 +398,23 @@ export function Calendar({
             {days.map((d, i) => (
               <DayColumn key={d.toISOString()} day={d} dayIndex={i} onOpenBlock={onOpenBlock} />
             ))}
+
+            {/* Línea de destino: el bloque se mueve continuo, esta guía muestra el snap real. */}
+            {drag && drag.overGrid && (drag.mode === 'move' || drag.mode === 'new') && (
+              <div
+                className="pointer-events-none absolute z-30 flex items-center"
+                style={{
+                  top: minToPx(drag.startMin - dayStartMin, settings.slotPx),
+                  left: `${drag.dayIndex * colW}%`, width: `${colW}%`,
+                }}
+              >
+                <span className="rounded-l bg-[var(--accent)] px-1 py-0.5 font-mono text-[9px] text-[var(--accent-fg)]">
+                  {hhmm(drag.startMin)}
+                  {drag.copy ? ' · copiar' : drag.groupIds && drag.groupIds.length > 1 ? ` · ${drag.groupIds.length} bloques` : drag.insertion ? ` · ${drag.insertion === 'before' ? 'antes' : 'después'}` : dropConflict ? ' · reacomoda' : ''}
+                </span>
+                <span className="h-px flex-1 bg-[var(--accent)]" />
+              </div>
+            )}
 
             {/* Franja marcada con sus acciones */}
             {range && rangeDayIndex >= 0 && (
@@ -329,8 +455,8 @@ export function Calendar({
                 style={{
                   borderColor: ghost.kind === 'break' ? 'var(--muted)' : ghost.color,
                   background: `color-mix(in oklab, ${ghost.kind === 'break' ? 'var(--muted)' : ghost.color} 12%, var(--surface))`,
-                  top: minToPx(ghost.startMin - dayStartMin, settings.slotPx),
-                  height: Math.max(minToPx(ghost.durationMin, settings.slotPx), 18),
+                  top: minToPx((ghost.visualStartMin ?? ghost.startMin) - dayStartMin, settings.slotPx),
+                  height: Math.max(minToPx(ghost.visualDurationMin ?? ghost.durationMin, settings.slotPx), 18),
                   left: `calc(${ghost.dayIndex * colW}% + 2px)`,
                   width: `calc(${colW}% - 4px)`,
                 }}
@@ -416,11 +542,13 @@ function RangeOverlay({
 
 function MultiBar() {
   const multi = useUI((s) => s.multi);
+  const setMulti = useUI((s) => s.setMulti);
   const clearSelection = useUI((s) => s.clearSelection);
   const removeBlocks = useStore((s) => s.removeBlocks);
   const shiftBlocks = useStore((s) => s.shiftBlocks);
   const setDone = useStore((s) => s.setDone);
   const setPinned = useStore((s) => s.setPinned);
+  const placeBlockGroup = useStore((s) => s.placeBlockGroup);
   const blocks = useStore((s) => s.blocks);
   if (!multi.length) return null;
 
@@ -432,6 +560,7 @@ function MultiBar() {
       style={{ borderTopColor: 'var(--accent)', background: 'color-mix(in oklab, var(--accent) 7%, var(--surface))' }}
     >
       <span className="tabular font-mono text-[13px] font-semibold">{multi.length} bloques</span>
+      <span className="hidden text-[10.5px] text-muted lg:inline">Arrastrá para mover juntos · Ctrl+C / Ctrl+V</span>
       <span className="mx-0.5 h-5 w-px bg-[var(--border)]" />
       {[-30, -10, 10, 30].map((d) => (
         <button
@@ -453,6 +582,16 @@ function MultiBar() {
         className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px] font-medium text-muted transition-colors hover:border-[var(--accent)] hover:text-ink"
       >
         Completar
+      </button>
+      <button
+        onClick={() => {
+          const anchor = multi.map((id) => blocks[id]).filter(Boolean).sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0];
+          if (!anchor) return;
+          setMulti(placeBlockGroup(multi, anchor.id, parseISO(anchor.startsAt), minutesOf(anchor.startsAt) + 10, true));
+        }}
+        className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px] font-medium text-muted transition-colors hover:border-[var(--accent)] hover:text-ink"
+      >
+        Duplicar
       </button>
       <button
         onClick={() => { removeBlocks(multi); clearSelection(); }}

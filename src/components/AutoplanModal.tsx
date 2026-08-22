@@ -8,7 +8,7 @@ import type { AutoplanConfig, PlanOrder, PlanSource } from '../types';
 import { dateKey, durationLabel, fmt, hhmm, snap } from '../lib/time';
 import { usePlannerLog } from '../lib/plannerLog';
 import { useToasts } from '../store';
-import { Btn, Field, Modal, NumField, Segmented } from './Modal';
+import { Btn, Field, Modal, NumField, Segmented, Tabs, TimeField } from './Modal';
 
 const ORDERS: { id: PlanOrder; label: string }[] = [
   { id: 'list', label: 'Orden de lista' },
@@ -17,9 +17,8 @@ const ORDERS: { id: PlanOrder; label: string }[] = [
   { id: 'shortest', label: 'Cortas primero' },
 ];
 
-export function AutoplanModal({
-  open, onClose, preset,
-}: { open: boolean; onClose: () => void; preset: 'wand' | 'dice' }) {
+export function AutoplanModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [tab, setTab] = useState<'setup' | 'preview'>('setup');
   const cfgSaved = useStore((s) => s.settings.autoplan);
   const updateSettings = useStore((s) => s.updateSettings);
   const tasks = useStore((s) => s.tasks);
@@ -35,10 +34,7 @@ export function AutoplanModal({
   const [seed, setSeed] = useState(() => Date.now());
   const [dropped, setDropped] = useState<string[]>([]);
 
-  const cfg = useMemo(
-    () => ({ ...cfgSaved, order: preset === 'dice' ? ('random' as PlanOrder) : cfgSaved.order }),
-    [cfgSaved, preset]
-  );
+  const cfg = cfgSaved;
   const setCfg = (patch: Partial<typeof cfg>) => updateSettings({ autoplan: { ...cfgSaved, ...patch } });
 
   const day = parseISO(cursor);
@@ -65,10 +61,10 @@ export function AutoplanModal({
   const { candidates, obstacles } = useMemo(() => {
     if (cfg.source === 'today') return candidatesFromDay(dayBlocks, fromMin);
     return {
-      candidates: candidatesFromTasks(tasks, lists, scheduled, cfg),
+      candidates: candidatesFromTasks(tasks, lists, scheduled, cfg, cursor),
       obstacles: dayBlocks,
     };
-  }, [cfg, dayBlocks, fromMin, tasks, lists, scheduled]);
+  }, [cfg, dayBlocks, fromMin, tasks, lists, scheduled, cursor]);
 
   /**
    * "Reasignar tiempo": para esta tanda nada más, sin tocar lo guardado en
@@ -122,8 +118,14 @@ export function AutoplanModal({
     const todayKey = dateKey(new Date());
     const isTodayView = cursor === todayKey;
     const leftoverAll = [
-      ...result.leftover.map((p) => ({ title: p.title, durationMin: p.durationMin, reason: p.reason })),
-      ...excludedCandidates.map((p) => ({ title: p.title, durationMin: p.durationMin, reason: 'la sacaste vos' })),
+      ...result.leftover.map((p) => ({
+        title: p.title, durationMin: p.durationMin, reason: p.reason,
+        taskId: p.taskId, color: p.color,
+      })),
+      ...excludedCandidates.map((p) => ({
+        title: p.title, durationMin: p.durationMin, reason: 'la sacaste vos',
+        taskId: p.taskId, color: p.color,
+      })),
     ];
 
     if (cfg.source === 'today') {
@@ -142,17 +144,14 @@ export function AutoplanModal({
       );
     }
 
-    // Si algo quedó afuera de hoy, dejamos rastro visible y avisamos con opción de deshacer.
-    // "Sin agendar hoy" es para lo que YA estaba en la agenda de hoy y se cayó
-    // al reordenar. Una tarea pendiente que no entró en esta tanda nunca estuvo
-    // en la agenda: ya tiene su lugar, que es seguir en el panel de Tareas.
-    if (isTodayView && cfg.source === 'today') usePlannerLog.getState().set(todayKey, leftoverAll);
-    const kind = preset === 'dice' ? 'El dado' : 'La varita';
+    // La bandeja del panel derecho evita tener que volver a encontrar estas
+    // tareas en listas grandes, sin importar de qué modo del organizador vienen.
+    if (isTodayView) usePlannerLog.getState().set(todayKey, leftoverAll);
     useToasts.getState().push({
       kind: 'info',
       title: leftoverAll.length
-        ? `${kind}: agendó ${keep.length}, ${leftoverAll.length} no entraron`
-        : `${kind} agendó ${keep.length} sin problemas`,
+        ? `Organizador: agendó ${keep.length}, ${leftoverAll.length} no entraron`
+        : `Organizador: agendó ${keep.length} sin problemas`,
       body: leftoverAll.length ? 'Quedaron listadas en Tareas y en el panel de la derecha.' : undefined,
       ttl: leftoverAll.length ? 0 : 6000,
       onUndo: undo,
@@ -168,7 +167,7 @@ export function AutoplanModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={preset === 'dice' ? 'Dado' : 'Varita'}
+      title="Organizar día"
       subtitle={
         reordering
           ? 'Reacomoda los bloques del día. Lo completado, lo que ya arrancó y las pausas no se mueven.'
@@ -176,8 +175,8 @@ export function AutoplanModal({
       }
       footer={
         <>
-          {(preset === 'dice' || cfg.order === 'random') && (
-            <Btn onClick={() => setSeed(Date.now())}>Volver a tirar</Btn>
+          {cfg.order === 'random' && (
+            <Btn onClick={() => setSeed(Date.now())}>Mezclar de nuevo</Btn>
           )}
           <Btn onClick={onClose}>Cancelar</Btn>
           <Btn variant="primary" onClick={apply} disabled={keep.length === 0 && result.leftover.length === 0}>
@@ -186,7 +185,11 @@ export function AutoplanModal({
         </>
       }
     >
-      <div className="space-y-4 border-b border-line p-5">
+      <Tabs active={tab} onChange={setTab} tabs={[
+        { id: 'setup' as const, label: 'Configuración' },
+        { id: 'preview' as const, label: `Vista previa (${keep.length})` },
+      ]} />
+      {tab === 'setup' && <div className="space-y-4 p-5">
         <Field label="Qué acomodar">
           <Segmented
             value={cfg.source}
@@ -228,16 +231,7 @@ export function AutoplanModal({
           />
           {cfg.from === 'custom' && (
             <div className="mt-2">
-              <input
-                type="time"
-                step={600}
-                value={hhmm(cfg.customFromMin)}
-                onChange={(e) => {
-                  const [h, m] = e.target.value.split(':').map(Number);
-                  if (!Number.isNaN(h)) setCfg({ customFromMin: snap(h * 60 + m) });
-                }}
-                className="rounded-lg border border-line bg-surface-2 px-2 py-1.5 font-mono text-[13px] outline-none"
-              />
+              <TimeField value={cfg.customFromMin} onCommit={(value) => setCfg({ customFromMin: value })} />
             </div>
           )}
           {cfg.from === 'dayStart' && (
@@ -255,11 +249,9 @@ export function AutoplanModal({
           autoFitMin={autoFitMin}
         />
 
-        {preset !== 'dice' && (
-          <Field label="Orden">
-            <Segmented value={cfg.order} onChange={(v) => setCfg({ order: v })} options={ORDERS} />
-          </Field>
-        )}
+        <Field label="Orden">
+          <Segmented value={cfg.order} onChange={(v) => setCfg({ order: v })} options={ORDERS} />
+        </Field>
 
         <div className="grid gap-4 sm:grid-cols-2">
           {!reordering && (
@@ -281,10 +273,10 @@ export function AutoplanModal({
           </Field>
         </div>
 
-        {/* Los grupos solo tienen sentido cuando salimos a buscar tareas nuevas */}
+        {/* Las clasificaciones solo tienen sentido cuando salimos a buscar tareas nuevas */}
         {!reordering && (
           <>
-            <Field label="Grupos">
+            <Field label="Clasificaciones">
               <div className="rounded-lg border border-line">
                 <label className="flex items-center gap-2.5 border-b border-line px-3 py-2 text-[13px] font-medium">
                   <input
@@ -294,7 +286,7 @@ export function AutoplanModal({
                     onChange={(e) => setCfg({ listIds: e.target.checked ? null : [] })}
                     className="h-4 w-4 accent-[var(--accent)]"
                   />
-                  Todos los grupos
+                  Todas las clasificaciones
                 </label>
                 <div className="max-h-40 overflow-y-auto p-1">
                   {lists.map((l) => {
@@ -334,10 +326,10 @@ export function AutoplanModal({
             </label>
           </>
         )}
-      </div>
+      </div>}
 
       {/* Vista previa */}
-      <div className="p-5">
+      {tab === 'preview' && <div className="p-5">
         <div className="mb-2 flex items-baseline justify-between">
           <h3 className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted">Va a quedar así</h3>
           <span className="tabular font-mono text-[10.5px] text-muted">
@@ -378,7 +370,7 @@ export function AutoplanModal({
           onInclude={(key) => setDropped((d) => d.filter((x) => x !== key))}
           reordering={reordering}
         />
-      </div>
+      </div>}
     </Modal>
   );
 }
@@ -422,7 +414,7 @@ function Leftovers({
         {dropped.length > 0 && 'Si volvés a incluir alguna, se recalcula el reparto de tiempo con la nueva cantidad. '}
         {reordering
           ? 'Lo que quede afuera se saca de la agenda y vuelve al panel de tareas como pendiente.'
-          : 'Siguen pendientes en su grupo. Podés correr la hora de fin o dejarlas para mañana.'}
+          : 'Siguen pendientes en su clasificación y también quedan visibles en Actividad. Podés correr la hora de fin o dejarlas para mañana.'}
       </p>
     </div>
   );
@@ -447,16 +439,7 @@ function ReassignTimeField({
       <div className="space-y-2.5 rounded-lg border border-line p-3">
         <div className="flex items-center gap-2.5">
           <span className="w-28 shrink-0 text-[12.5px] text-muted">Terminar antes de</span>
-          <input
-            type="time"
-            step={600}
-            value={hhmm(cfg.untilMin)}
-            onChange={(e) => {
-              const [h, m] = e.target.value.split(':').map(Number);
-              if (!Number.isNaN(h)) setCfg({ untilMin: snap(h * 60 + m) });
-            }}
-            className="rounded-lg border border-line bg-surface-2 px-2 py-1.5 font-mono text-[13px] outline-none"
-          />
+          <TimeField value={cfg.untilMin} onCommit={(value) => setCfg({ untilMin: value })} />
         </div>
 
         <Segmented

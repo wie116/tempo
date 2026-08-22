@@ -24,16 +24,18 @@ export const useSync = create<SyncState>((set) => ({
 
 const listToRow = (l: List, userId: string) => ({
   id: l.id, user_id: userId, name: l.name, color: l.color,
-  sort_order: l.order, collapsed: l.collapsed,
+  sort_order: l.order, collapsed: l.collapsed, scope: l.scope,
 });
 const rowToList = (r: any): List => ({
-  id: r.id, name: r.name, color: r.color, order: r.sort_order ?? 0, collapsed: !!r.collapsed,
+  id: r.id, name: r.name, color: r.color, order: r.sort_order ?? 0,
+  collapsed: !!r.collapsed, scope: r.scope === 'routine' ? 'routine' : 'todo',
 });
 
 const taskToRow = (t: Task, userId: string) => ({
   id: t.id, user_id: userId, list_id: t.listId, title: t.title,
   estimated_min: t.estimatedMin, color: t.color, is_recurring: t.recurring,
   repeat: t.repeat, repeat_until: t.repeatUntil, repeat_weekdays: t.repeatWeekdays,
+  priority: t.priority, planned_date: t.plannedDate, due_date: t.dueDate, is_inbox: t.inbox,
   is_archived: t.archived, notes: t.notes ?? '', sort_order: t.order,
 });
 const rowToTask = (r: any): Task => ({
@@ -41,6 +43,8 @@ const rowToTask = (r: any): Task => ({
   estimatedMin: r.estimated_min ?? null, color: r.color ?? null,
   recurring: !!r.is_recurring, repeat: r.repeat ?? 'none', repeatUntil: r.repeat_until ?? null,
   repeatWeekdays: r.repeat_weekdays ?? null,
+  priority: r.priority ?? 'normal', plannedDate: r.planned_date ?? null,
+  dueDate: r.due_date ?? null, inbox: !!r.is_inbox,
   archived: !!r.is_archived, notes: r.notes ?? '', order: r.sort_order ?? 0,
 });
 
@@ -48,13 +52,17 @@ const blockToRow = (b: Block, userId: string) => ({
   id: b.id, user_id: userId, task_id: b.taskId, title: b.title, color: b.color,
   starts_at: b.startsAt, duration_min: b.durationMin, kind: b.kind,
   status: b.status, closed_at: b.closedAt, pinned: b.pinned,
-  series_id: b.seriesId, notes: b.notes ?? '',
+  series_id: b.seriesId, notes: b.notes ?? '', icon: b.icon ?? null,
+  repeat: b.repeat ?? 'none', repeat_until: b.repeatUntil ?? null, repeat_weekdays: b.repeatWeekdays ?? null,
 });
 const rowToBlock = (r: any): Block => ({
   id: r.id, taskId: r.task_id ?? null, title: r.title, color: r.color,
   startsAt: r.starts_at, durationMin: r.duration_min, kind: r.kind,
   status: r.status, closedAt: r.closed_at ?? null, pinned: !!r.pinned,
-  seriesId: r.series_id ?? null, notes: r.notes ?? '',
+  seriesId: r.series_id ?? null, notes: r.notes ?? '', icon: r.icon ?? null,
+  repeat: r.repeat ?? 'none', repeatUntil: r.repeat_until ?? null, repeatWeekdays: r.repeat_weekdays ?? null,
+  source: r.source ?? 'tempo',
+  external: r.external_ref ?? null, syncStatus: r.sync_status ?? 'local',
 });
 
 /* ---------- Instantánea para saber qué cambió ---------- */

@@ -1,5 +1,5 @@
 import type { Block } from '../types';
-import { dateKey, minutesOf } from './time';
+import { SLOT_MIN, dateKey, minutesOf, snap } from './time';
 
 export interface Conflict {
   date: Date;
@@ -40,4 +40,29 @@ export function findConflicts(
     if (hits.length) conflicts.push({ date: d, withTitles: hits.map((b) => b.title) });
   }
   return conflicts;
+}
+
+/** Busca el hueco más cercano sin alterar los bloques existentes. Prioriza
+ * avanzar en el día y, si no entra, prueba hacia atrás. */
+export function findAvailableStart(
+  date: Date,
+  desiredStart: number,
+  durationMin: number,
+  existing: Block[],
+  dayStartMin = 0,
+  dayEndMin = 24 * 60
+): number | null {
+  const key = dateKey(date);
+  const occupied = existing
+    .filter((block) => block.startsAt.slice(0, 10) === key)
+    .map((block) => ({ start: minutesOf(block.startsAt), end: minutesOf(block.startsAt) + block.durationMin }));
+  const maxStart = dayEndMin - durationMin;
+  const fits = (start: number) =>
+    start >= dayStartMin && start <= maxStart &&
+    occupied.every((slot) => start + durationMin <= slot.start || start >= slot.end);
+  const wanted = snap(Math.max(dayStartMin, Math.min(desiredStart, maxStart)));
+  if (fits(wanted)) return wanted;
+  for (let start = wanted + SLOT_MIN; start <= maxStart; start += SLOT_MIN) if (fits(start)) return start;
+  for (let start = wanted - SLOT_MIN; start >= dayStartMin; start -= SLOT_MIN) if (fits(start)) return start;
+  return null;
 }

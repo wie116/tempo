@@ -1,6 +1,6 @@
 interface Options {
   /** Qué hacer cuando el gesto se convierte en arrastre de verdad. */
-  onDrag: () => void;
+  onDrag: (pointer: DragPointer) => void;
   /** Qué hacer si fue un toque/clic corto sin desplazamiento real. */
   onTap?: () => void;
   /** Cuánto hay que sostener el dedo antes de arrastrar, en ms (solo táctil). */
@@ -9,6 +9,13 @@ interface Options {
   slopPx?: number;
   /** Cuánto tiene que moverse el mouse para que cuente como arrastre, en px. */
   mouseSlopPx?: number;
+}
+
+export interface DragPointer {
+  clientX: number;
+  clientY: number;
+  pointerId: number;
+  pointerType: string;
 }
 
 /**
@@ -42,12 +49,12 @@ export function startPointerGesture(
     window.removeEventListener('pointercancel', onUp);
   };
 
-  const beginDrag = () => {
+  const beginDrag = (pointer: DragPointer) => {
     if (started) return;
     started = true;
     cleanup();
     capture();
-    onDrag();
+    onDrag(pointer);
   };
 
   const onMove = (ev: PointerEvent) => {
@@ -57,7 +64,7 @@ export function startPointerGesture(
       if (dist > slopPx) { moved = true; cleanup(); } // el dedo se fue: es scroll, no lo tocamos
     } else if (dist > mouseSlopPx) {
       moved = true;
-      beginDrag(); // recién acá es un arrastre real
+      beginDrag(ev); // entregamos este movimiento: no se pierde el primer frame
     }
   };
 
@@ -74,7 +81,7 @@ export function startPointerGesture(
       cleanup();
       if (moved) return;
       navigator.vibrate?.(12);
-      beginDrag();
+      beginDrag({ clientX: x, clientY: y, pointerId, pointerType });
     }, holdMs);
   } else {
     e.preventDefault();

@@ -10,6 +10,8 @@ import { dateKey } from './time';
 export const MAX_OCCURRENCES: Record<Exclude<RepeatMode, 'none'>, number> = {
   daily: 180,
   weekly: 180,
+  monthly: 60,
+  yearly: 20,
 };
 
 export const UNTIL_PRESETS = [
@@ -33,6 +35,20 @@ export function expandSeries(
   if (repeat === 'none') return [from];
   const cap = MAX_OCCURRENCES[repeat];
   const limit = until ? parseISO(until) : addYears(from, 3);
+  if (repeat === 'monthly' || repeat === 'yearly') {
+    const out: Date[] = [];
+    let index = 0;
+    let d = from;
+    while (out.length < cap && dateKey(d) <= dateKey(limit)) {
+      out.push(d);
+      index += 1;
+      // Siempre calculamos desde el ancla para que febrero no cambie para
+      // siempre una rutina creada un día 29, 30 o 31.
+      d = repeat === 'monthly' ? addMonths(from, index) : addYears(from, index);
+    }
+    return out.length ? out : [from];
+  }
+
   const days = repeat === 'weekly' ? (weekdays?.length ? weekdays : [from.getDay()]) : null;
 
   const out: Date[] = [];

@@ -2,9 +2,9 @@ import { useMemo, useState } from 'react';
 import { parseISO } from 'date-fns';
 import { useStore } from '../store';
 import { expandSeries } from '../lib/repeat';
-import { findConflicts } from '../lib/conflicts';
+import { findAvailableStart, findConflicts } from '../lib/conflicts';
 import { dateKey, fmt, hhmm, snap } from '../lib/time';
-import { Btn, Field, Modal, NumField } from './Modal';
+import { Btn, Field, Modal, NumField, TimeField } from './Modal';
 import type { Task } from '../types';
 
 /**
@@ -28,6 +28,7 @@ export function SeriesScheduleModal({
   const [startMin, setStartMin] = useState(snap(initialStartMin));
   const [durationMin, setDurationMin] = useState(task?.estimatedMin ?? 30);
   const [excluded, setExcluded] = useState<string[]>([]);
+  const [conflictMode, setConflictMode] = useState<'move' | 'exclude'>('move');
 
   if (!task) return null;
   const anchor = parseISO(day);
@@ -41,13 +42,22 @@ export function SeriesScheduleModal({
     () => findConflicts(dates, startMin, durationMin, Object.values(blocks)),
     [dates, startMin, durationMin, blocks]
   );
+  const resolvedStarts = useMemo(() => new Map(dates.map((date) => [
+    dateKey(date),
+    findAvailableStart(date, startMin, durationMin, Object.values(blocks), 0, 24 * 60),
+  ])), [dates, startMin, durationMin, blocks]);
   const included = dates.filter((d) => !excluded.includes(dateKey(d)));
   const includedConflicts = conflicts.filter((c) => !excluded.includes(dateKey(c.date)));
-  const canConfirm = includedConflicts.length === 0 && included.length > 0;
+  const unresolved = included.filter((date) => resolvedStarts.get(dateKey(date)) === null);
+  const canConfirm = included.length > 0 && unresolved.length === 0 &&
+    (conflictMode === 'move' || includedConflicts.length === 0);
 
   const confirm = () => {
     if (!canConfirm) return;
-    scheduleSeries(taskId, included, startMin, durationMin);
+    scheduleSeries(taskId, included.map((date) => ({
+      date,
+      startMin: conflictMode === 'move' ? resolvedStarts.get(dateKey(date)) ?? startMin : startMin,
+    })), durationMin);
     onClose();
   };
 
@@ -77,16 +87,7 @@ export function SeriesScheduleModal({
             />
           </Field>
           <Field label="Hora">
-            <input
-              type="time"
-              step={600}
-              value={hhmm(startMin)}
-              onChange={(e) => {
-                const [h, m] = e.target.value.split(':').map(Number);
-                if (!Number.isNaN(h)) setStartMin(snap(h * 60 + m));
-              }}
-              className="w-full rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 font-mono text-[13px] outline-none"
-            />
+            <TimeField value={startMin} onCommit={setStartMin} />
           </Field>
           <Field label="Duración">
             <NumField value={durationMin} onCommit={(v) => v && setDurationMin(v)} suffix="min" />
@@ -94,14 +95,32 @@ export function SeriesScheduleModal({
         </div>
 
         <p className="text-[11.5px] leading-snug text-muted">
-          {task.repeat === 'daily'
-            ? 'Se repite todos los días.'
-            : `Se repite ${task.repeatWeekdays?.length ? 'los días que elegiste' : 'una vez por semana, el mismo día'} en la pestaña Repetición de la tarea.`}
+          {task.repeat === 'daily' ? 'Se repite todos los días.'
+            : task.repeat === 'monthly' ? 'Se repite cada mes, el mismo día.'
+            : task.repeat === 'yearly' ? 'Se repite cada año, en la misma fecha.'
+            : `Se repite ${task.repeatWeekdays?.length ? 'los días que elegiste' : 'una vez por semana, el mismo día'} en la pestaña Repetición de la rutina.`}
           {' '}Para cambiar qué días o hasta cuándo, editá la tarea.
         </p>
       </div>
 
       <div className="p-5">
+        {conflicts.length > 0 && (
+          <div className="mb-4 rounded-xl border border-line bg-surface-2 p-3">
+            <p className="mb-2 text-[12px] font-medium">Cuando una fecha esté ocupada</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button onClick={() => setConflictMode('move')} className="rounded-lg border p-2.5 text-left"
+                style={{ borderColor: conflictMode === 'move' ? 'var(--accent)' : 'var(--border)' }}>
+                <span className="block text-[12.5px] font-medium">Mover al próximo hueco</span>
+                <span className="block text-[10.5px] text-muted">Conserva la fecha y busca una hora libre.</span>
+              </button>
+              <button onClick={() => setConflictMode('exclude')} className="rounded-lg border p-2.5 text-left"
+                style={{ borderColor: conflictMode === 'exclude' ? 'var(--accent)' : 'var(--border)' }}>
+                <span className="block text-[12.5px] font-medium">Elegir fechas a omitir</span>
+                <span className="block text-[10.5px] text-muted">No mueve nada; excluí los choques manualmente.</span>
+              </button>
+            </div>
+          </div>
+        )}
         <div className="mb-2 flex items-baseline justify-between">
           <h3 className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted">
             {dates.length} {dates.length === 1 ? 'ocurrencia' : 'ocurrencias'}
@@ -118,6 +137,7 @@ export function SeriesScheduleModal({
             const key = dateKey(d);
             const conflict = conflicts.find((c) => dateKey(c.date) === key);
             const off = excluded.includes(key);
+            const resolvedStart = resolvedStarts.get(key);
             return (
               <li
                 key={key}
@@ -131,12 +151,14 @@ export function SeriesScheduleModal({
                 <span className="w-24 shrink-0 text-[12px] capitalize">{fmt(d, 'EEE d LLL')}</span>
                 {conflict ? (
                   <span className="min-w-0 flex-1 truncate text-[11.5px]" style={{ color: off ? 'var(--muted)' : 'var(--now)' }}>
-                    Choca con {conflict.withTitles.join(', ')}
+                    {conflictMode === 'move' && resolvedStart !== null
+                      ? `${hhmm(startMin)} ocupado · pasa a ${hhmm(resolvedStart!)}`
+                      : `Choca con ${conflict.withTitles.join(', ')}`}
                   </span>
                 ) : (
                   <span className="flex-1 text-[11.5px] text-muted">Libre</span>
                 )}
-                {conflict && (
+                {conflict && conflictMode === 'exclude' && (
                   <button
                     onClick={() => setExcluded((ex) => (off ? ex.filter((x) => x !== key) : [...ex, key]))}
                     className="shrink-0 rounded px-1.5 text-[11px] text-muted hover:text-ink"
@@ -149,11 +171,16 @@ export function SeriesScheduleModal({
           })}
         </ul>
 
-        {conflicts.length > 0 && (
+        {conflicts.length > 0 && conflictMode === 'exclude' && (
           <p className="mt-3 rounded-lg border border-dashed px-3 py-2.5 text-[11.5px] leading-snug"
             style={{ borderColor: 'var(--now)', color: 'var(--now)' }}>
-            Hay días que se pisan con algo que ya agendaste. Excluilos uno por uno o cambiá la hora —
-            no se puede confirmar mientras quede algún choque.
+            Excluí las fechas ocupadas o cambiá la hora. No se puede confirmar mientras quede algún choque.
+          </p>
+        )}
+        {unresolved.length > 0 && (
+          <p className="mt-3 rounded-lg border border-dashed px-3 py-2.5 text-[11.5px] leading-snug"
+            style={{ borderColor: 'var(--now)', color: 'var(--now)' }}>
+            {unresolved.length} fechas no tienen un hueco suficiente dentro del día. Excluilas o reducí la duración.
           </p>
         )}
       </div>

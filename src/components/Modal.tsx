@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { clamp, hhmm } from '../lib/time';
 
 interface Props {
   open: boolean;
@@ -25,7 +26,25 @@ export function Modal({ open, onClose, title, subtitle, size = 'md', footer, chi
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); closeRef.current(); }
+      const panel = panelRef.current;
+      const openPanels = document.querySelectorAll<HTMLElement>('[data-modal-panel]');
+      if (!panel || openPanels[openPanels.length - 1] !== panel) return;
+      const target = e.target as HTMLElement | null;
+      const editing = Boolean(target?.matches('input, textarea, select, [contenteditable="true"]'));
+      if (e.key === 'Escape' || (e.key === 'Backspace' && !editing)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        closeRef.current();
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !target?.matches('textarea, select, button')) {
+        const confirm = panel.querySelector<HTMLButtonElement>('[data-modal-confirm]:not(:disabled)');
+        if (confirm) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          confirm.click();
+        }
+      }
     };
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -46,11 +65,12 @@ export function Modal({ open, onClose, title, subtitle, size = 'md', footer, chi
     >
       <div
         ref={panelRef}
+        data-modal-panel
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`modal-panel flex max-h-[90vh] w-full flex-col overflow-hidden rounded-t-2xl border border-line bg-surface outline-none sm:rounded-2xl ${WIDTHS[size]}`}
+        className={`modal-panel flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-line bg-surface outline-none sm:max-h-[90vh] sm:rounded-2xl ${WIDTHS[size]}`}
         style={{ boxShadow: 'var(--shadow-modal)' }}
       >
         <header className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-5 py-3.5">
@@ -72,7 +92,7 @@ export function Modal({ open, onClose, title, subtitle, size = 'md', footer, chi
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
 
         {footer && (
-          <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-line bg-surface-2/50 px-5 py-3">
+          <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-line bg-surface-2/50 px-4 py-3 sm:px-5">
             {footer}
           </footer>
         )}
@@ -122,6 +142,7 @@ export function Btn({
   if (variant === 'primary')
     return (
       <button type={type} onClick={onClick} disabled={disabled} className={base}
+        data-modal-confirm
         style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}>
         {children}
       </button>
@@ -241,11 +262,63 @@ export function NumField({
   );
 }
 
+/** Entrada horaria estable en todos los navegadores. Los inputs nativos de
+ * tipo time obedecen al locale del sistema y pueden mostrar AM/PM aunque el
+ * valor sea de 24 h; este campo siempre presenta HH:MM. */
+export function TimeField({
+  value, onCommit, step = 10, min = 0, max = 24 * 60, className = '',
+}: {
+  value: number;
+  onCommit: (minutes: number) => void;
+  step?: number;
+  min?: number;
+  max?: number;
+  className?: string;
+}) {
+  const formatValue = (minutes: number) => minutes === 24 * 60 ? '24:00' : hhmm(minutes);
+  const [draft, setDraft] = useState(formatValue(value));
+  const focused = useRef(false);
+
+  useEffect(() => { if (!focused.current) setDraft(formatValue(value)); }, [value]);
+
+  const commit = () => {
+    const raw = draft.trim();
+    const parts = raw.includes(':') ? raw.split(':') : null;
+    const digits = raw.replace(/\D/g, '');
+    const hour = parts ? Number(parts[0]) : Number(digits.length > 2 ? digits.slice(0, -2) : digits);
+    const minute = parts ? Number(parts[1] || 0) : digits.length > 2 ? Number(digits.slice(-2)) : 0;
+    if (!Number.isFinite(hour) || !Number.isFinite(minute) || minute > 59 || hour > 24 || (hour === 24 && minute !== 0)) {
+      setDraft(formatValue(value));
+      return;
+    }
+    const next = clamp(Math.round((hour * 60 + minute) / step) * step, min, max);
+    onCommit(next);
+    setDraft(formatValue(next));
+  };
+
+  return <input
+    type="text"
+    inputMode="numeric"
+    maxLength={5}
+    value={draft}
+    placeholder="00:00"
+    aria-label="Hora en formato 24 horas"
+    onFocus={(e) => { focused.current = true; e.currentTarget.select(); }}
+    onChange={(e) => setDraft(e.target.value.replace(/[^0-9:]/g, ''))}
+    onBlur={() => { focused.current = false; commit(); }}
+    onKeyDown={(e) => {
+      if (e.key === 'Enter') e.currentTarget.blur();
+      if (e.key === 'Escape') { setDraft(formatValue(value)); e.currentTarget.blur(); }
+    }}
+    className={`w-24 rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 text-center font-mono text-[13px] outline-none focus:border-[var(--accent)] ${className}`}
+  />;
+}
+
 export function Segmented<T extends string>({
   value, options, onChange,
 }: { value: T; options: { id: T; label: string }[]; onChange: (v: T) => void }) {
   return (
-    <div className="inline-flex rounded-lg bg-surface-2 p-0.5">
+    <div className="inline-flex max-w-full flex-wrap rounded-lg bg-surface-2 p-0.5">
       {options.map((o) => (
         <button
           key={o.id}
@@ -291,6 +364,7 @@ export function ConfirmModal({
           <Btn onClick={onClose}>Cancelar</Btn>
           <button
             onClick={() => { onConfirm(); onClose(); }}
+            data-modal-confirm
             className="rounded-lg px-3 py-1.5 text-[12.5px] font-semibold"
             style={
               danger
@@ -323,7 +397,7 @@ export function Tabs<T extends string>({
   tabs, active, onChange,
 }: { tabs: { id: T; label: string }[]; active: T; onChange: (id: T) => void }) {
   return (
-    <div className="flex gap-1 border-b border-line px-5 pt-3">
+    <div className="flex gap-1 overflow-x-auto border-b border-line px-5 pt-3" role="tablist">
       {tabs.map((t) => {
         const on = t.id === active;
         return (

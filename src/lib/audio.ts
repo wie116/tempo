@@ -13,7 +13,7 @@ export function unlockAudio() {
   if (ctx.state === 'suspended') void ctx.resume();
 }
 
-export type ChimeId = 'bell' | 'chime' | 'bowl' | 'marimba' | 'soft' | 'blip';
+export type ChimeId = 'bell' | 'chime' | 'bowl' | 'marimba' | 'soft' | 'blip' | 'digital' | 'gong' | 'wood' | 'sparkle';
 
 export const CHIMES: { id: ChimeId; name: string }[] = [
   { id: 'bell', name: 'Campana' },
@@ -22,6 +22,10 @@ export const CHIMES: { id: ChimeId; name: string }[] = [
   { id: 'marimba', name: 'Marimba' },
   { id: 'soft', name: 'Suave' },
   { id: 'blip', name: 'Bip' },
+  { id: 'digital', name: 'Digital' },
+  { id: 'gong', name: 'Gong profundo' },
+  { id: 'wood', name: 'Madera' },
+  { id: 'sparkle', name: 'Destello' },
 ];
 
 interface Recipe {
@@ -41,6 +45,10 @@ const RECIPES: Record<ChimeId, Recipe> = {
   marimba: { notes: [659.25, 987.77, 1318.5], type: 'triangle', decay: 0.42, gap: 0.11 },
   soft:    { notes: [523.25, 659.25, 783.99], type: 'triangle', decay: 1.1, gap: 0.18 },
   blip:    { notes: [1046.5, 1046.5], type: 'square', decay: 0.16, gap: 0.12, gain: 0.6 },
+  digital: { notes: [783.99, 1046.5, 1318.5], type: 'square', decay: 0.12, gap: 0.09, gain: 0.45 },
+  gong:    { notes: [130.81, 196, 261.63], type: 'sine', decay: 4.2, gap: 0.035, shimmer: true, gain: 1.15 },
+  wood:    { notes: [440, 523.25], type: 'triangle', decay: 0.24, gap: 0.16, gain: 0.8 },
+  sparkle: { notes: [1318.5, 1760, 2349.32, 3135.96], type: 'sine', decay: 0.72, gap: 0.065, shimmer: true, gain: 0.65 },
 };
 
 /** Sonidos generados con Web Audio: cero archivos, cero latencia. */

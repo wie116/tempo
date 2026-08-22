@@ -14,16 +14,24 @@ const TOOLS: { id: Tool; label: string; hint: string; icon: React.ReactNode }[] 
   },
 ];
 
-export function Toolbar({ onAutoplan }: { onAutoplan: (preset: 'wand' | 'dice') => void }) {
+export function Toolbar({ onAutoplan }: { onAutoplan: () => void }) {
   const tool = useUI((s) => s.tool);
   const setTool = useUI((s) => s.setTool);
   const range = useUI((s) => s.range);
   const multi = useUI((s) => s.multi);
   const slotPx = useStore((s) => s.settings.slotPx);
+  const cursor = useStore((s) => s.cursor);
+  const blocks = useStore((s) => s.blocks);
+  const dayStartHour = useStore((s) => s.settings.dayStartHour);
+  const dayEndHour = useStore((s) => s.settings.dayEndHour);
   const setZoom = useStore((s) => s.setZoom);
+  const occupied = Object.values(blocks).filter((b) => b.startsAt.slice(0, 10) === cursor && b.kind !== 'break' && b.status !== 'skipped')
+    .reduce((sum, b) => sum + b.durationMin, 0);
+  const capacity = Math.max(60, (dayEndHour - dayStartHour) * 60);
+  const load = Math.round(occupied / capacity * 100);
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface-2/40 px-2.5 py-2">
+    <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-line bg-surface-2/40 px-2.5 py-2 sm:gap-2">
       <div className="flex rounded-lg border border-line bg-surface p-0.5">
         {TOOLS.map((t) => (
           <button
@@ -48,42 +56,33 @@ export function Toolbar({ onAutoplan }: { onAutoplan: (preset: 'wand' | 'dice') 
 
       <ChainLock />
 
-      <span className="mx-0.5 h-6 w-px bg-[var(--border)]" />
+      <span className="mx-0.5 hidden h-6 w-px shrink-0 bg-[var(--border)] sm:block" />
 
       <button
-        onClick={() => onAutoplan('wand')}
-        title="Varita: acomoda las pendientes desde ahora, en orden"
-        className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px] font-medium text-muted transition-colors hover:border-[var(--accent)] hover:text-ink"
+        onClick={onAutoplan}
+        title="Organizá bloques o tareas pendientes en los huecos disponibles"
+        className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px] font-medium text-muted transition-colors hover:border-[var(--accent)] hover:text-ink"
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
           <path d="M3 13 11 5M9.5 3.5l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           <path d="M12.5 9.5l.5 1.2 1.2.5-1.2.5-.5 1.2-.5-1.2L11 11.2l1.2-.5.5-1.2Z" fill="currentColor" />
         </svg>
-        Varita
+        Organizar
       </button>
 
-      <button
-        onClick={() => onAutoplan('dice')}
-        title="Dado: mismo motor, pero mezcla el orden"
-        className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px] font-medium text-muted transition-colors hover:border-[var(--accent)] hover:text-ink"
-      >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-          <rect x="2.5" y="2.5" width="11" height="11" rx="2.5" stroke="currentColor" strokeWidth="1.4" />
-          <circle cx="5.8" cy="5.8" r="1.05" fill="currentColor" />
-          <circle cx="10.2" cy="10.2" r="1.05" fill="currentColor" />
-          <circle cx="8" cy="8" r="1.05" fill="currentColor" />
-        </svg>
-        Dado
-      </button>
+      <div className="hidden min-w-28 shrink-0 md:block" title={`${occupied} minutos asignados de ${capacity}`}>
+        <div className="mb-1 flex justify-between text-[10px] text-muted"><span>Carga del día</span><span className="font-mono">{load}%</span></div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-surface"><span className="block h-full rounded-full" style={{ width: `${Math.min(100, load)}%`, background: load > 90 ? 'var(--now)' : 'var(--accent)' }} /></div>
+      </div>
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex shrink-0 items-center gap-2">
         {range && (
           <span className="tabular hidden font-mono text-[12px] text-muted sm:inline">
             {hhmm(range.startMin)}–{hhmm(range.startMin + range.durationMin)} · {durationLabel(range.durationMin)}
           </span>
         )}
         {multi.length > 0 && (
-          <span className="font-mono text-[12px] text-muted">{multi.length} seleccionados</span>
+          <span className="font-mono text-[12px] text-muted">{multi.length} {multi.length === 1 ? 'seleccionado' : 'seleccionados'}</span>
         )}
 
         <div className="flex items-center rounded-lg border border-line bg-surface">
