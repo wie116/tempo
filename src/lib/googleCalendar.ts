@@ -46,3 +46,7 @@ export async function connectGoogleCalendar(): Promise<void> {
 export async function saveGoogleCalendarSelection(calendarIds: string[]): Promise<void> {
   await invoke('google-calendar-selection', { calendarIds });
 }
+
+export async function syncGoogleCalendar(): Promise<{ imported: number; syncedAt: string }> {
+  return invoke('google-calendar-sync');
+}

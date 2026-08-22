@@ -78,6 +78,15 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
         // Leemos el store en este instante en vez de usar el valor del render
         // anterior; así Ctrl+clic seguido de arrastre nunca pierde integrantes.
         const liveSelection = useUI.getState().multi;
+        // En táctil, la primera pulsación larga incorpora el bloque a la
+        // selección. Una pulsación larga posterior sobre cualquiera de los
+        // seleccionados mueve el grupo completo. Así no hace falta una tecla Ctrl.
+        if (pointer.pointerType === 'touch' && mode === 'move' && !liveSelection.includes(block.id)) {
+          setMulti([...liveSelection, block.id]);
+          focusBlock(block.id);
+          navigator.vibrate?.(18);
+          return;
+        }
         const groupIds = mode === 'move' && liveSelection.includes(block.id) ? liveSelection : [block.id];
         if (mode === 'move') setMulti(groupIds);
         focusBlock(block.id);

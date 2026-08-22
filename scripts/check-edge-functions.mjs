@@ -7,6 +7,7 @@ const files = [
   'supabase/functions/google-calendar-callback/index.ts',
   'supabase/functions/google-calendar-calendars/index.ts',
   'supabase/functions/google-calendar-selection/index.ts',
+  'supabase/functions/google-calendar-sync/index.ts',
 ];
 
 for (const file of files) {

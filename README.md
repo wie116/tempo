@@ -34,7 +34,15 @@ Abrí http://localhost:5173
 | Administrar tareas | Botón *Tareas* |
 | Captura natural | `Informe mañana 45m prioridad alta #Trabajo` · `Pagar vence 30/8` |
 
-Atajos: `Ctrl+Z` deshace, `Ctrl+Shift+Z` rehace, `Supr` (o `Retroceso`), que borra lo seleccionado. Los atajos de una sola letra se sacaron porque se disparaban mientras escribías.
+Atajos: `Ctrl+K` abre la búsqueda global, `Ctrl+Z` deshace, `Ctrl+Shift+Z` rehace y `Supr` (o `Retroceso`) borra lo seleccionado. Los atajos de una sola letra se sacaron porque se disparaban mientras escribías.
+
+## Revisión, enfoque e IA
+
+- **Revisar** reúne agenda de Hoy, Cierre guiado, planificación de Mañana, resumen semanal e historial reciente.
+- **Modo Enfoque** muestra reloj, tarea actual, progreso y controles esenciales a pantalla completa. Si el dispositivo lo permite, mantiene la pantalla despierta.
+- Tempo es **PWA instalable** y puede avisar antes de un bloque o recordar el cierre diario. El permiso se concede desde Ajustes → Avisos.
+- En móvil, la barra inferior da acceso estable a Plan, Revisar, Enfoque y Actividad. Una pulsación larga añade bloques a la selección; otra pulsación larga sobre la selección mueve el grupo.
+- Ajustes → Integraciones incluye un **puente IA/MCP**: copia un contexto versionado y sólo aplica respuestas `tempo.ai-plan.v1` después de validarlas y mostrar una vista previa.
 
 ## Reglas de la agenda
 
@@ -159,14 +167,15 @@ navegador; el refresh token se cifra con AES-GCM antes de guardarse.
    supabase functions deploy google-calendar-callback --no-verify-jwt
    supabase functions deploy google-calendar-calendars
    supabase functions deploy google-calendar-selection
+   supabase functions deploy google-calendar-sync
    ```
 
 La callback es pública porque Google redirige hacia ella sin una sesión de Supabase en los headers.
 La operación sigue protegida mediante `state`, PKCE, expiración de diez minutos y consumo único.
 Las demás funciones sí exigen la sesión del usuario.
 
-## Qué sigue
+Al seleccionar calendarios, **Sincronizar ahora** importa los próximos seis meses como bloques protegidos de solo lectura y conserva un mes anterior para revisión. Tempo organiza alrededor de esos eventos.
 
-- Activar Google Calendar cargando los secretos y desplegando las Edge Functions ya preparadas.
-- Conectar un proveedor MCP/IA al contrato de captura local de `src/lib/taskCapture.ts`.
-- Estadísticas de tiempo planificado vs. real, PWA instalable y notificaciones del sistema.
+## Contrato IA / MCP
+
+El navegador no recibe credenciales de un servidor MCP. La integración usa un puente explícito y auditable: `buildMcpContext` exporta `tempo.mcp-context.v1`; la IA devuelve `tempo.ai-plan.v1`; `parseAiPlan` valida cada acción y la interfaz exige vista previa antes de aplicarla. El contrato vive en `src/lib/mcpBridge.ts` y puede conectarse luego a cualquier transporte MCP sin cambiar el modelo de datos.

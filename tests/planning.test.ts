@@ -6,6 +6,7 @@ import { applyBlockPatches, insertionAroundTarget, layoutBlockLanes, normalizeBl
 import { expandSeries } from '../src/lib/repeat';
 import { findAvailableStart } from '../src/lib/conflicts';
 import { parseTaskDraft } from '../src/lib/taskCapture';
+import { parseAiPlan } from '../src/lib/mcpBridge';
 
 const block = (id: string, startsAt: string, durationMin = 30, pinned = false): Block => ({
   id, taskId: null, title: id, color: '#123456', startsAt, durationMin,
@@ -173,4 +174,15 @@ test('el organizador prioriza urgencia y luego fecha límite', () => {
     task('urgente', 'urgent', null, 3),
   ], [list], new Set(), cfg, '2026-08-22');
   assert.deepEqual(result.map((item) => item.taskId), ['urgente', 'alta-pronto', 'alta-tarde', 'normal']);
+});
+
+test('el puente MCP acepta únicamente planes versionados y acciones conocidas', () => {
+  const plan = parseAiPlan(JSON.stringify({
+    schema: 'tempo.ai-plan.v1', explanation: 'Preparar mañana',
+    actions: [{ type: 'create-task', title: 'Informe', plannedDate: '2026-08-23', estimatedMin: 40 }],
+  }));
+  assert.equal(plan.actions.length, 1);
+  assert.deepEqual(plan.actions[0], { type: 'create-task', title: 'Informe', plannedDate: '2026-08-23', estimatedMin: 40 });
+  assert.throws(() => parseAiPlan(JSON.stringify({ schema: 'otro', actions: [] })));
+  assert.throws(() => parseAiPlan(JSON.stringify({ schema: 'tempo.ai-plan.v1', actions: [{ type: 'delete-everything' }] })));
 });

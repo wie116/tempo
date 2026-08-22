@@ -1,0 +1,11 @@
+{
+  "name": "Tempo · Time blocking",
+  "short_name": "Tempo",
+  "description": "Agenda diaria, tareas, rutinas y bloques de enfoque.",
+  "start_url": "/tempo/",
+  "scope": "/tempo/",
+  "display": "standalone",
+  "background_color": "#f5efe4",
+  "theme_color": "#b36a36",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

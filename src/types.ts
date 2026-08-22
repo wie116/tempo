@@ -134,5 +134,12 @@ export interface Settings {
   closePrompt: boolean;
   /** Permite ocultar la bandeja sin descartar lo que contiene. */
   showPendingTray: boolean;
+  /** Avisos del sistema cuando Tempo está en segundo plano. */
+  systemNotifications: boolean;
+  /** Anticipación del aviso de comienzo; 0 avisa justo al empezar. */
+  notificationLeadMin: number;
+  /** Recordatorio diario para revisar pendientes. */
+  dailyReviewEnabled: boolean;
+  dailyReviewHour: number;
   autoplan: AutoplanConfig;
 }

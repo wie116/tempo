@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { parseISO } from 'date-fns';
+import { addDays, parseISO } from 'date-fns';
 import { useStore, useToasts, useUI } from './store';
-import { minutesOf, weekDays } from './lib/time';
+import { dateKey, minutesOf, weekDays } from './lib/time';
 import { unlockAudio } from './lib/audio';
 import { useClockEngine } from './hooks/useClockEngine';
 import { useAuth } from './hooks/useAuth';
@@ -15,6 +15,7 @@ import { NowPanel } from './components/NowPanel';
 import { Calendar } from './components/Calendar';
 import { TimerBar } from './components/TimerBar';
 import { Toasts } from './components/Toasts';
+import { MobileNav } from './components/MobileNav';
 
 const MonthView = lazy(() => import('./components/MonthView').then((m) => ({ default: m.MonthView })));
 const SettingsModal = lazy(() => import('./components/SettingsModal').then((m) => ({ default: m.SettingsModal })));
@@ -24,6 +25,8 @@ const BlockModal = lazy(() => import('./components/BlockModal').then((m) => ({ d
 const AutoplanModal = lazy(() => import('./components/AutoplanModal').then((m) => ({ default: m.AutoplanModal })));
 const TodayModal = lazy(() => import('./components/TodayModal').then((m) => ({ default: m.TodayModal })));
 const OnboardingModal = lazy(() => import('./components/OnboardingModal').then((m) => ({ default: m.OnboardingModal })));
+const CommandPalette = lazy(() => import('./components/CommandPalette').then((m) => ({ default: m.CommandPalette })));
+const FocusMode = lazy(() => import('./components/FocusMode').then((m) => ({ default: m.FocusMode })));
 
 /** La vista de día no necesita todo el ancho: una columna estirada se lee peor. */
 const WIDTH = { day: 'max-w-2xl', week: 'max-w-6xl', month: 'max-w-6xl' };
@@ -56,9 +59,11 @@ export default function App() {
   const [tasksOpen, setTasksOpen] = useState(false);
   const [todayOpen, setTodayOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [focusOpen, setFocusOpen] = useState(false);
   const [blockId, setBlockId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
-  const [autoplan, setAutoplan] = useState(false);
+  const [autoplan, setAutoplan] = useState<'default' | 'tomorrow' | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(() => localStorage.getItem('tempo-onboarding-v2') !== 'done');
   const finishOnboarding = () => { localStorage.setItem('tempo-onboarding-v2', 'done'); setOnboardingOpen(false); };
   const locateBlock = (id: string) => {
@@ -84,9 +89,13 @@ export default function App() {
   // En una pantalla angosta una semana de siete columnas pierde legibilidad.
   // Abrimos en Día la primera vez; si el usuario elige Semana después, respetamos esa decisión.
   useEffect(() => {
-    if (window.matchMedia('(max-width: 639px)').matches && useStore.getState().view === 'week') {
-      useStore.getState().setView('day');
-    }
+    const media = window.matchMedia('(max-width: 639px)');
+    const enterMobile = () => {
+      if (media.matches && useStore.getState().view === 'week') useStore.getState().setView('day');
+    };
+    enterMobile();
+    media.addEventListener('change', enterMobile);
+    return () => media.removeEventListener('change', enterMobile);
   }, []);
 
   useEffect(() => {
@@ -126,6 +135,11 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCommandOpen(true);
+        return;
+      }
       // En un campo de texto, Ctrl+Z lo maneja el navegador.
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typingNow(e.target)) {
         e.preventDefault();
@@ -197,6 +211,7 @@ export default function App() {
         onOpenToday={() => setTodayOpen(true)}
         onOpenActivity={() => setActivityOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSearch={() => setCommandOpen(true)}
       />
 
       <div className="flex min-h-0 flex-1">
@@ -224,7 +239,7 @@ export default function App() {
               </Suspense>
             ) : (
               <>
-                <Toolbar onAutoplan={() => setAutoplan(true)} />
+                <Toolbar onAutoplan={() => setAutoplan('default')} />
                 <Calendar days={days} onOpenBlock={setBlockId} />
               </>
             )}
@@ -234,13 +249,15 @@ export default function App() {
         <NowPanel
           onOpenBlock={setBlockId}
           onLocateBlock={locateBlock}
-          onAutoplan={() => { setActivityOpen(false); setAutoplan(true); }}
+          onAutoplan={() => { setActivityOpen(false); setAutoplan('default'); }}
+          onOpenFocus={() => { setActivityOpen(false); setFocusOpen(true); }}
           mobileOpen={activityOpen}
           onCloseMobile={() => setActivityOpen(false)}
         />
       </div>
 
-      <TimerBar onOpenBlock={setBlockId} onOpenToday={() => setTodayOpen(true)} />
+      <TimerBar onOpenBlock={setBlockId} onOpenToday={() => setTodayOpen(true)} onOpenFocus={() => setFocusOpen(true)} />
+      <MobileNav onPlan={() => setSidebarOpen(true)} onReview={() => setTodayOpen(true)} onFocus={() => setFocusOpen(true)} onActivity={() => setActivityOpen(true)} />
       <Toasts />
 
       <Suspense fallback={null}>
@@ -254,14 +271,34 @@ export default function App() {
           open={todayOpen}
           onClose={() => setTodayOpen(false)}
           onOpenBlock={setBlockId}
-          onAutoplan={() => setAutoplan(true)}
+          onLocateBlock={locateBlock}
+          onAutoplan={() => setAutoplan('default')}
+          onPlanTomorrow={() => {
+            const tomorrow = dateKey(addDays(new Date(), 1));
+            const state = useStore.getState();
+            state.setCursor(tomorrow);
+            state.setView('day');
+            setAutoplan('tomorrow');
+          }}
         />
         <BlockModal id={blockId} onClose={() => setBlockId(null)} />
         <TaskEditModal id={taskId} onClose={() => setTaskId(null)} />
         {autoplan && (
-          <AutoplanModal open onClose={() => setAutoplan(false)} />
+          <AutoplanModal open initialSource={autoplan === 'tomorrow' ? 'pending' : undefined} onClose={() => setAutoplan(null)} />
         )}
         <OnboardingModal open={onboardingOpen} onDone={finishOnboarding} />
+        <CommandPalette
+          open={commandOpen}
+          onClose={() => setCommandOpen(false)}
+          onReview={() => setTodayOpen(true)}
+          onFocus={() => setFocusOpen(true)}
+          onAutoplan={() => setAutoplan('default')}
+          onTasks={() => setTasksOpen(true)}
+          onSettings={() => setSettingsOpen(true)}
+          onLocateBlock={locateBlock}
+          onEditTask={setTaskId}
+        />
+        <FocusMode open={focusOpen} onClose={() => setFocusOpen(false)} onOpenBlock={(id) => { setFocusOpen(false); setBlockId(id); }} />
       </Suspense>
     </div>
   );

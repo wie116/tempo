@@ -17,7 +17,7 @@ const ORDERS: { id: PlanOrder; label: string }[] = [
   { id: 'shortest', label: 'Cortas primero' },
 ];
 
-export function AutoplanModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AutoplanModal({ open, onClose, initialSource }: { open: boolean; onClose: () => void; initialSource?: PlanSource }) {
   const [tab, setTab] = useState<'setup' | 'preview'>('setup');
   const cfgSaved = useStore((s) => s.settings.autoplan);
   const updateSettings = useStore((s) => s.updateSettings);
@@ -34,7 +34,7 @@ export function AutoplanModal({ open, onClose }: { open: boolean; onClose: () =>
   const [seed, setSeed] = useState(() => Date.now());
   const [dropped, setDropped] = useState<string[]>([]);
 
-  const cfg = cfgSaved;
+  const cfg = initialSource ? { ...cfgSaved, source: initialSource } : cfgSaved;
   const setCfg = (patch: Partial<typeof cfg>) => updateSettings({ autoplan: { ...cfgSaved, ...patch } });
 
   const day = parseISO(cursor);

@@ -12,13 +12,14 @@ const VIEWS: { id: ViewMode; label: string; short: string }[] = [
 ];
 
 export function TopBar({
-  onToggleSidebar, onOpenTasks, onOpenToday, onOpenActivity, onOpenSettings,
+  onToggleSidebar, onOpenTasks, onOpenToday, onOpenActivity, onOpenSettings, onOpenSearch,
 }: {
   onToggleSidebar: () => void;
   onOpenTasks: () => void;
   onOpenToday: () => void;
   onOpenActivity: () => void;
   onOpenSettings: () => void;
+  onOpenSearch: () => void;
 }) {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
@@ -85,6 +86,10 @@ export function TopBar({
 
       <SyncBadge />
 
+      <button onClick={onOpenSearch} className="hidden items-center gap-1.5 rounded-lg border border-line px-2 py-1.5 text-[11.5px] text-muted hover:text-ink lg:flex" title="Buscar o ejecutar · Ctrl+K">
+        Buscar <kbd className="rounded bg-surface-2 px-1 font-mono text-[9px]">Ctrl K</kbd>
+      </button>
+
       <button
         onClick={onOpenSettings}
         className="flex items-center gap-1.5 rounded-lg border border-line px-2 py-1.5 text-muted transition-colors hover:border-[var(--accent)] hover:bg-surface-2 hover:text-ink"
@@ -135,10 +140,10 @@ export function TopBar({
 
       <button
         onClick={onOpenToday}
-        title="Resumen del día · H"
+        title="Revisión, cierre y semana"
         className="hidden rounded-lg border border-line px-2.5 py-1.5 text-[12.5px] font-medium text-muted transition-colors hover:border-[var(--accent)] hover:text-ink md:block"
       >
-        Resumen
+        Revisar
       </button>
 
       <button

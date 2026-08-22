@@ -31,6 +31,10 @@ const DEFAULT_SETTINGS: Settings = {
   startChime: true,
   closePrompt: true,
   showPendingTray: true,
+  systemNotifications: false,
+  notificationLeadMin: 5,
+  dailyReviewEnabled: false,
+  dailyReviewHour: 20,
   autoplan: {
     source: 'pending',
     order: 'list',

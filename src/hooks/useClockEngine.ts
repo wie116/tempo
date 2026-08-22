@@ -11,6 +11,7 @@ import { dateKey, minutesOf } from '../lib/time';
 export function useClockEngine() {
   const tick = useClock((s) => s.tick);
   const lastMin = useRef<number>(-1);
+  const notified = useRef(new Set<string>());
 
   useEffect(() => {
     const run = () => {
@@ -28,10 +29,28 @@ export function useClockEngine() {
       const { blocks, settings } = useStore.getState();
       const key = dateKey(now);
 
+      const systemNotice = (id: string, title: string, body: string) => {
+        if (!settings.systemNotifications || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+        const noticeKey = `${key}-${id}`;
+        if (notified.current.has(noticeKey)) return;
+        notified.current.add(noticeKey);
+        new Notification(title, { body, icon: `${import.meta.env.BASE_URL}icon.svg`, tag: noticeKey });
+      };
+
+      if (settings.dailyReviewEnabled && nowMin === settings.dailyReviewHour * 60) {
+        const unresolved = Object.values(blocks).filter((block) => block.startsAt.slice(0, 10) === key && block.kind !== 'break' && block.status !== 'done').length;
+        systemNotice('daily-review', 'Momento de cerrar el día', unresolved ? `${unresolved} tareas necesitan una decisión.` : 'Tu agenda está al día.');
+      }
+
       for (const b of Object.values(blocks)) {
         if (b.startsAt.slice(0, 10) !== key) continue;
         const start = minutesOf(b.startsAt);
         const end = start + b.durationMin;
+
+        const noticeAt = start - settings.notificationLeadMin;
+        if (noticeAt > prev && noticeAt <= nowMin) {
+          systemNotice(`start-${b.id}`, settings.notificationLeadMin ? `${b.title} empieza pronto` : `Empieza: ${b.title}`, settings.notificationLeadMin ? `En ${settings.notificationLeadMin} minutos · ${b.startsAt.slice(11, 16)}` : `Hasta las ${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`);
+        }
 
         if (settings.startChime && start > prev && start <= nowMin) {
           if (settings.soundEnabled) playChime(b.kind === 'break' ? settings.breakChime : settings.chime, settings.volume * 0.7, 1);

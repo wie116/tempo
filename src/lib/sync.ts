@@ -10,6 +10,8 @@ interface SyncState {
   status: SyncStatus;
   lastError: string | null;
   lastSyncedAt: number | null;
+  pendingChanges: boolean;
+  concurrentChange: boolean;
   set: (patch: Partial<SyncState>) => void;
 }
 
@@ -17,6 +19,8 @@ export const useSync = create<SyncState>((set) => ({
   status: 'off',
   lastError: null,
   lastSyncedAt: null,
+  pendingChanges: false,
+  concurrentChange: false,
   set: (patch) => set(patch),
 }));
 
@@ -142,7 +146,7 @@ export async function pullAll(): Promise<void> {
   applyingRemote = false;
 
   synced = snapshotOf(lists, tasks, blocks, settings);
-  useSync.getState().set({ status: 'idle', lastSyncedAt: Date.now() });
+  useSync.getState().set({ status: 'idle', lastSyncedAt: Date.now(), pendingChanges: false });
 }
 
 /** Primera vez: si la nube está vacía y acá hay datos, los subimos. */
@@ -199,7 +203,7 @@ export async function forcePushAll(): Promise<void> {
     const { lists, tasks, blocks, settings } = useStore.getState();
     await uploadEverything(lists, tasks, blocks, settings);
     synced = snapshotOf(lists, tasks, blocks, settings);
-    useSync.getState().set({ status: 'idle', lastSyncedAt: Date.now() });
+    useSync.getState().set({ status: 'idle', lastSyncedAt: Date.now(), pendingChanges: false });
   } catch (e: any) {
     useSync.getState().set({ status: 'error', lastError: e?.message ?? 'Error al subir' });
   }
@@ -242,7 +246,10 @@ async function doPush(): Promise<void> {
   const nothing =
     !changedLists.length && !changedTasks.length && !changedBlocks.length &&
     !goneLists.length && !goneTasks.length && !goneBlocks.length && !settingsChanged;
-  if (nothing) return;
+  if (nothing) {
+    useSync.getState().set({ pendingChanges: false });
+    return;
+  }
 
   useSync.getState().set({ status: 'syncing' });
 
@@ -283,7 +290,7 @@ async function doPush(): Promise<void> {
     // Acabamos de escribir: si una bajada estaba en camino (el eco de Realtime
     // de este mismo cambio), le damos margen para no pisar lo que recién subió.
     suppressPullUntil = Date.now() + 1200;
-    useSync.getState().set({ status: 'idle', lastError: null, lastSyncedAt: Date.now() });
+    useSync.getState().set({ status: 'idle', lastError: null, lastSyncedAt: Date.now(), pendingChanges: false });
   } catch (e: any) {
     useSync.getState().set({ status: 'error', lastError: e?.message ?? 'Error al sincronizar' });
   }
@@ -304,15 +311,17 @@ export async function startSync(uid: string): Promise<void> {
   try {
     const seeded = await seedRemoteIfEmpty();
     if (!seeded) await pullAll();
-    else useSync.getState().set({ status: 'idle', lastSyncedAt: Date.now() });
+    else useSync.getState().set({ status: 'idle', lastSyncedAt: Date.now(), pendingChanges: false });
   } catch (e: any) {
     useSync.getState().set({ status: 'error', lastError: e?.message ?? 'No se pudo subir tu agenda' });
   }
 
   // Cada cambio local se agrupa 500 ms antes de viajar: escribir en un campo
   // de texto no dispara veinte peticiones.
-  unsubscribeStore = useStore.subscribe(() => {
+  unsubscribeStore = useStore.subscribe((state, previous) => {
     if (applyingRemote) return;
+    if (state.lists === previous.lists && state.tasks === previous.tasks && state.blocks === previous.blocks && state.settings === previous.settings) return;
+    useSync.getState().set({ pendingChanges: true });
     if (pushTimer) clearTimeout(pushTimer);
     pushTimer = setTimeout(() => void pushChanges(), 500);
   });
@@ -322,6 +331,7 @@ export async function startSync(uid: string): Promise<void> {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'blocks' }, schedulePull)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, schedulePull)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'lists' }, schedulePull)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${uid}` }, schedulePull)
     .subscribe();
 
   window.addEventListener('beforeunload', flushSync);
@@ -333,6 +343,7 @@ export async function startSync(uid: string): Promise<void> {
  * pisaría un cambio local recién hecho y el bloque "volvería" a su lugar viejo.
  */
 function schedulePull() {
+  if (pushTimer) useSync.getState().set({ concurrentChange: true });
   if (pullTimer) clearTimeout(pullTimer);
   pullTimer = setTimeout(async () => {
     await pushPending();
@@ -369,7 +380,7 @@ export function stopSync(): void {
   window.removeEventListener('beforeunload', flushSync);
   userId = null;
   synced = emptySnapshot();
-  useSync.getState().set({ status: 'off', lastError: null, lastSyncedAt: null });
+  useSync.getState().set({ status: 'off', lastError: null, lastSyncedAt: null, pendingChanges: false, concurrentChange: false });
 }
 
 /** Fuerza una subida inmediata, sin esperar el agrupado. */

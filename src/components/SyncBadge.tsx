@@ -7,6 +7,7 @@ import { Btn, ConfirmModal } from './Modal';
 export function SyncBadge() {
   const status = useSync((s) => s.status);
   const lastError = useSync((s) => s.lastError);
+  const pendingChanges = useSync((s) => s.pendingChanges);
   const [open, setOpen] = useState(false);
   const [askOut, setAskOut] = useState(false);
 
@@ -16,6 +17,7 @@ export function SyncBadge() {
   const label =
     status === 'error' ? 'Error al sincronizar'
     : status === 'syncing' ? 'Sincronizando…'
+    : pendingChanges ? 'Cambios pendientes'
     : status === 'idle' ? 'Sincronizado'
     : 'Sin conexión';
 
@@ -54,6 +56,10 @@ export function SyncBadge() {
 function AccountPanel({ onClose, onSignOut }: { onClose: () => void; onSignOut: () => void }) {
   const status = useSync((s) => s.status);
   const lastError = useSync((s) => s.lastError);
+  const lastSyncedAt = useSync((s) => s.lastSyncedAt);
+  const pendingChanges = useSync((s) => s.pendingChanges);
+  const concurrentChange = useSync((s) => s.concurrentChange);
+  const setSync = useSync((s) => s.set);
   const localBlocks = useStore((s) => Object.keys(s.blocks).length);
   const localTasks = useStore((s) => s.tasks.length);
   const [email, setEmail] = useState('');
@@ -102,6 +108,13 @@ function AccountPanel({ onClose, onSignOut }: { onClose: () => void; onSignOut: 
             {lastError}
           </p>
         )}
+        {!lastError && <p className="mt-1 text-[10.5px] text-muted">
+          {pendingChanges ? 'Hay cambios esperando para subir.' : lastSyncedAt ? `Última sincronización: ${new Date(lastSyncedAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}` : 'Preparando la primera sincronización.'}
+        </p>}
+        {concurrentChange && <div className="mt-2 rounded-lg border border-line bg-surface-2 px-2.5 py-2 text-[11.5px] leading-snug">
+          Detectamos cambios locales y remotos al mismo tiempo. Tempo subió primero lo local y luego actualizó la agenda para evitar pérdidas.
+          <button onClick={() => setSync({ concurrentChange: false })} className="ml-1 font-semibold underline">Entendido</button>
+        </div>}
 
         {/* Contraste entre lo que tenés acá y lo que hay realmente en el servidor */}
         <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg border border-line p-2.5 text-center">

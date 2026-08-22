@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { cloudEnabled } from '../lib/supabase';
 import {
-  connectGoogleCalendar, getGoogleCalendarState, saveGoogleCalendarSelection,
+  connectGoogleCalendar, getGoogleCalendarState, saveGoogleCalendarSelection, syncGoogleCalendar,
   googleCalendarEnabled, type GoogleCalendarState,
 } from '../lib/googleCalendar';
 
@@ -10,6 +10,7 @@ export function GoogleCalendarSettings({ active, notice }: { active: boolean; no
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
 
   const refresh = async () => {
     if (!cloudEnabled || !googleCalendarEnabled) return;
@@ -53,10 +54,10 @@ export function GoogleCalendarSettings({ active, notice }: { active: boolean; no
           <div>
             <p className="text-[12.5px] font-medium">Google Calendar</p>
             <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted">
-              Preparado para activarse al final, después de cerrar la experiencia principal.
+              La integración está completa. Falta cargar los secretos y desplegar las funciones para activarla.
             </p>
           </div>
-          <span className="rounded-full border border-line px-2 py-1 text-[10px] font-semibold text-muted">Pendiente</span>
+          <span className="rounded-full border border-line px-2 py-1 text-[10px] font-semibold text-muted">Lista para activar</span>
         </div>
       ) : !cloudEnabled ? (
         <p className="text-[12px] leading-relaxed text-muted">
@@ -90,8 +91,12 @@ export function GoogleCalendarSettings({ active, notice }: { active: boolean; no
             ))}
           </div>
           <p className="text-[11px] leading-snug text-muted">
-            La próxima etapa importará los calendarios marcados como eventos de solo lectura.
+            Los calendarios marcados se importan como bloques protegidos de solo lectura. Tempo organiza alrededor de ellos.
           </p>
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-surface-2 px-3 py-2">
+            <p className="text-[11px] text-muted">{syncResult ?? 'Sincronizá cuando quieras traer los últimos cambios.'}</p>
+            <button disabled={saving || !state.calendars.some((calendar) => calendar.selected)} onClick={() => { setSaving(true); setError(null); void syncGoogleCalendar().then((result) => setSyncResult(`${result.imported} eventos actualizados`)).catch((e) => setError(e.message)).finally(() => setSaving(false)); }} className="shrink-0 rounded-lg border border-line px-2.5 py-1.5 text-[11.5px] font-medium disabled:opacity-40">Sincronizar ahora</button>
+          </div>
         </>
       ) : (
         <div className="flex items-center justify-between gap-4">

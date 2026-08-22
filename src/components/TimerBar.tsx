@@ -10,7 +10,7 @@ const pad = (n: number) => String(Math.floor(n)).padStart(2, '0');
  * No hay botón de play: el reloj de pared es el timer.
  * Esta barra solo lee la agenda y te dice dónde estás parado.
  */
-export function TimerBar({ onOpenBlock, onOpenToday }: { onOpenBlock: (id: string) => void; onOpenToday: () => void }) {
+export function TimerBar({ onOpenBlock, onOpenToday, onOpenFocus }: { onOpenBlock: (id: string) => void; onOpenToday: () => void; onOpenFocus: () => void }) {
   const blocks = useStore((s) => s.blocks);
   const now = useClock((s) => s.now);
 
@@ -52,9 +52,9 @@ export function TimerBar({ onOpenBlock, onOpenToday }: { onOpenBlock: (id: strin
         }}
       />
 
-      <div className="tabular font-mono text-[21px] font-bold leading-none tracking-tight">
+      <button onClick={onOpenFocus} title="Abrir modo Enfoque" className="tabular rounded-lg font-mono text-[21px] font-bold leading-none tracking-tight hover:text-[var(--accent)]">
         {current ? `${pad(remaining / 60)}:${pad(remaining % 60)}` : hhmm(nowMin)}
-      </div>
+      </button>
 
       <div className="min-w-0 flex-1">
         {current ? (

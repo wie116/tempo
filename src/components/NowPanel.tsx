@@ -14,11 +14,12 @@ const R_OUT = 92;
 const R_IN = 76;
 
 export function NowPanel({
-  onOpenBlock, onLocateBlock, onAutoplan, mobileOpen = false, onCloseMobile,
+  onOpenBlock, onLocateBlock, onAutoplan, onOpenFocus, mobileOpen = false, onCloseMobile,
 }: {
   onOpenBlock: (id: string) => void;
   onLocateBlock: (id: string) => void;
   onAutoplan: () => void;
+  onOpenFocus: () => void;
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
 }) {
@@ -166,6 +167,8 @@ export function NowPanel({
             </button>
           ))}
         </div>
+
+        <button onClick={onOpenFocus} className="mb-3 w-full rounded-lg border border-line px-3 py-2 text-[11.5px] font-medium text-muted transition-colors hover:border-[var(--accent)] hover:text-ink">Abrir modo Enfoque</button>
 
         {clockStyle === 'rings' && <>
         <div className="relative mx-auto" style={{ width: SIZE, height: SIZE }}>

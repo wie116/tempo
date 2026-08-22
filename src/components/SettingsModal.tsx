@@ -7,6 +7,8 @@ import { Btn, ConfirmModal, Modal, NumField, Row, Tabs, TimeField, inputCls } fr
 import { GoogleCalendarSettings } from './GoogleCalendarSettings';
 import { usePlannerLog } from '../lib/plannerLog';
 import { useUI } from '../store';
+import { PwaSettings } from './PwaSettings';
+import { McpBridgeSettings } from './McpBridgeSettings';
 
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -152,6 +154,9 @@ export function SettingsModal({
       {tab === 'integrations' && <Section title="Calendarios conectados">
         <GoogleCalendarSettings active={open} notice={integrationNotice} />
       </Section>}
+      {tab === 'integrations' && <Section title="Inteligencia artificial">
+        <McpBridgeSettings />
+      </Section>}
 
       {tab === 'account' && <Section title="Cuenta y datos">
         <p className="mb-4 text-[12px] leading-relaxed text-muted">
@@ -166,7 +171,9 @@ export function SettingsModal({
         </div>
       </Section>}
 
-      {tab === 'notifications' && <><Section title="Comportamiento del reloj">
+      {tab === 'notifications' && <><Section title="Aplicación y notificaciones">
+        <PwaSettings />
+      </Section><Section title="Comportamiento del reloj">
         <p className="mb-1 text-[11.5px] leading-snug text-muted">
           El reloj corre solo: no hay que arrancar nada. La agenda define los límites y Tempo te avisa
           cuando cruzás uno.
