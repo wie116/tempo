@@ -47,6 +47,7 @@ export default function App() {
   const view = useStore((s) => s.view);
   const cursor = useStore((s) => s.cursor);
   const theme = useStore((s) => s.settings.theme);
+  const fontFamily = useStore((s) => s.settings.fontFamily);
   const mondayFirst = useStore((s) => s.settings.weekStartsOnMonday);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -91,6 +92,9 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+  useEffect(() => {
+    document.documentElement.dataset.font = fontFamily;
+  }, [fontFamily]);
 
   /* iOS y Chrome bloquean el audio hasta el primer gesto */
   useEffect(() => {

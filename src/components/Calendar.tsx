@@ -341,17 +341,16 @@ export function Calendar({
             const dayView = days.length === 1;
             if (dayView) {
               return (
-                <div key={d.toISOString()} className="flex-1 px-2 py-2.5 text-center">
-                  <div
-                    className="mx-auto flex max-w-sm items-center justify-center gap-2 rounded-xl px-4 py-2"
-                    style={today
-                      ? { background: 'var(--accent)', color: 'var(--accent-fg)', boxShadow: '0 5px 14px color-mix(in oklab, var(--accent) 24%, transparent)' }
-                      : { background: 'var(--surface-2)', color: 'var(--text)' }}
-                  >
-                    <p className="text-[15px] font-semibold capitalize tracking-tight">{fmt(d, 'EEEE')}</p>
-                    <span className="h-4 w-px bg-current opacity-30" />
-                    <p className="tabular font-mono text-[17px] font-bold">{fmt(d, "d 'de' LLLL")}</p>
-                  </div>
+                <div
+                  key={d.toISOString()}
+                  className="flex flex-1 items-center justify-center gap-2 px-4 py-3 text-center"
+                  style={today
+                    ? { background: 'var(--accent)', color: 'var(--accent-fg)', boxShadow: 'inset 0 -3px 0 color-mix(in oklab, var(--accent) 72%, #000)' }
+                    : { background: 'var(--surface-2)', color: 'var(--text)' }}
+                >
+                  <p className="text-[16px] font-semibold capitalize tracking-tight">{fmt(d, 'EEEE')}</p>
+                  <span className="h-4 w-px bg-current opacity-30" />
+                  <p className="tabular text-[16px] font-semibold tracking-tight">{fmt(d, "d 'de' LLLL")}</p>
                 </div>
               );
             }

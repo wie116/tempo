@@ -54,7 +54,7 @@ export function SettingsModal({
         { id: 'account' as const, label: 'Cuenta' },
       ]} />
 
-      {tab === 'appearance' && <Section title="Tema y densidad">
+      {tab === 'appearance' && <Section title="Tema, tipografía y densidad">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {THEMES.map((t) => (
             <button
@@ -76,6 +76,31 @@ export function SettingsModal({
             </button>
           ))}
         </div>
+        <div className="mt-4">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Tipografía</p>
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              { id: 'modern' as const, name: 'Moderna', sample: 'Agenda clara', stack: "'Segoe UI', ui-sans-serif, system-ui, sans-serif" },
+              { id: 'editorial' as const, name: 'Editorial', sample: 'Agenda serena', stack: "Georgia, 'Times New Roman', serif" },
+              { id: 'rounded' as const, name: 'Redondeada', sample: 'Agenda amable', stack: "'Trebuchet MS', 'Arial Rounded MT Bold', sans-serif" },
+            ]).map((font) => (
+              <button
+                key={font.id}
+                onClick={() => set({ fontFamily: font.id })}
+                className="min-w-0 rounded-xl border px-2.5 py-2.5 text-left transition-transform hover:-translate-y-px"
+                style={{
+                  borderColor: s.fontFamily === font.id ? 'var(--accent)' : 'var(--border)',
+                  boxShadow: s.fontFamily === font.id ? '0 0 0 1px var(--accent)' : undefined,
+                  fontFamily: font.stack,
+                }}
+              >
+                <p className="truncate text-[15px] font-semibold">Aa</p>
+                <p className="truncate text-[11.5px] font-medium">{font.name}</p>
+                <p className="truncate text-[9.5px] text-muted">{font.sample}</p>
+              </button>
+            ))}
+          </div>
+        </div>
         <Row label="Densidad" hint="Alto de cada slot de 10 minutos">
           <input
             type="range" min={8} max={22} step={1} value={s.slotPx}
@@ -87,7 +112,7 @@ export function SettingsModal({
           <select value={s.clockStyle} onChange={(e) => set({ clockStyle: e.target.value as typeof s.clockStyle })} className={`${inputCls} w-36`}>
             <option value="rings">Anillos</option>
             <option value="focus">Enfoque</option>
-            <option value="stats">Resumen</option>
+            <option value="stats">Digital</option>
           </select>
         </Row>
       </Section>}

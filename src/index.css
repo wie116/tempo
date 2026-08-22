@@ -16,6 +16,18 @@
   --shadow-modal: 0 24px 64px -16px rgb(0 0 0 / .35);
 }
 
+[data-font='modern'] {
+  --font-ui: 'Instrument Sans', 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
+}
+
+[data-font='editorial'] {
+  --font-ui: Georgia, 'Times New Roman', ui-serif, serif;
+}
+
+[data-font='rounded'] {
+  --font-ui: 'Trebuchet MS', 'Arial Rounded MT Bold', ui-rounded, system-ui, sans-serif;
+}
+
 /* 1 · Claro — porcelana fría y pino */
 [data-theme='daylight'] {
   --bg: #eef2f1; --surface: #ffffff; --surface-2: #e8edeb; --border: #d5dddb;

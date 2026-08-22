@@ -113,6 +113,7 @@ export interface AutoplanConfig {
 
 export interface Settings {
   theme: string;
+  fontFamily: 'modern' | 'editorial' | 'rounded';
   dayStartHour: number;
   dayEndHour: number;
   /** Alto en px de un slot de 10 min. Es el nivel de zoom. */

@@ -7,11 +7,11 @@ import { parseTaskDraft } from '../lib/taskCapture';
 import type { List, Task, TaskPriority } from '../types';
 
 type Section = 'today' | 'inbox' | 'todo' | 'routine';
-const SECTION_META: { id: Section; label: string; hint: string }[] = [
-  { id: 'today', label: 'Hoy', hint: 'Para ubicar' },
-  { id: 'inbox', label: 'Inbox', hint: 'Sin clasificar' },
-  { id: 'todo', label: 'To-Do', hint: 'Tareas únicas' },
-  { id: 'routine', label: 'Rutinas', hint: 'Reutilizables' },
+const SECTION_META: { id: Section; label: string; hint: string; description: string }[] = [
+  { id: 'today', label: 'Hoy', hint: 'Para ubicar', description: 'Tareas previstas para este día que todavía necesitan un horario en la agenda.' },
+  { id: 'inbox', label: 'Inbox', hint: 'Sin clasificar', description: 'Tareas capturadas sin clasificar, listas para ordenar y acomodar más adelante.' },
+  { id: 'todo', label: 'To-Do', hint: 'Tareas únicas', description: 'Tareas que se realizan una sola vez y se archivan cuando las completás.' },
+  { id: 'routine', label: 'Rutinas', hint: 'Reutilizables', description: 'Actividades reutilizables que podés agendar una vez o repetir con la frecuencia que necesites.' },
 ];
 
 export function Sidebar({ onOpenTasks, onEditTask, onClose }: {
@@ -69,6 +69,8 @@ export function Sidebar({ onOpenTasks, onEditTask, onClose }: {
     return true;
   };
   const submitQuick = () => { if (create(quick, quickListId)) setQuick(''); };
+  const activeMeta = SECTION_META.find((item) => item.id === section)!;
+  const activeCount = tasks.filter((task) => countIn(section, task, today, scheduled)).length;
 
   return <div className="flex h-full min-h-0 flex-col bg-surface">
     <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-3 py-2.5">
@@ -91,6 +93,21 @@ export function Sidebar({ onOpenTasks, onEditTask, onClose }: {
         </button>;
       })}
     </div>
+
+    <section className="shrink-0 border-b border-line px-3 py-3" style={{ background: 'color-mix(in oklab, var(--accent) 5%, var(--surface))' }}>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-[18px] font-semibold leading-none tracking-tight">
+          {section === 'today' && cursor !== actualToday ? 'Día' : activeMeta.label}
+        </h3>
+        {activeCount > 0 && (
+          <span className="grid h-6 min-w-6 place-items-center rounded-full px-1.5 font-mono text-[10px] font-semibold"
+            style={{ background: 'color-mix(in oklab, var(--accent) 13%, transparent)', color: 'var(--accent)' }}>
+            {activeCount}
+          </span>
+        )}
+      </div>
+      <p className="mt-1.5 text-[11px] leading-relaxed text-muted">{activeMeta.description}</p>
+    </section>
 
     <div className="shrink-0 border-b border-line p-2">
       <div className="flex items-center gap-1.5 rounded-xl border border-line bg-surface-2 p-1.5 focus-within:border-[var(--accent)]">

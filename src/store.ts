@@ -15,6 +15,7 @@ export const UNSORTED_NAME = 'Sin clasificar';
 
 const DEFAULT_SETTINGS: Settings = {
   theme: 'daylight',
+  fontFamily: 'modern',
   dayStartHour: 7,
   dayEndHour: 23,
   slotPx: 12,
