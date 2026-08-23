@@ -5,6 +5,7 @@ import { dateKey, durationLabel, hhmm, minutesOf } from '../lib/time';
 import { EMPTY_LEFTOVER, usePlannerLog } from '../lib/plannerLog';
 import { isReadOnlyBlock } from '../lib/planning';
 import { startPointerGesture } from '../lib/gesture';
+import { EventIcon } from './EventIcon';
 
 const pad = (n: number) => String(Math.floor(n)).padStart(2, '0');
 
@@ -328,7 +329,7 @@ export function NowPanel({
               onClick={() => onOpenBlock(current.id)}
               className="mt-1 block w-full text-left text-[19px] font-semibold leading-snug tracking-tight"
             >
-              {current.icon && <span className="mr-1" aria-hidden>{current.icon}</span>}{current.title}
+              {current.icon && <EventIcon value={current.icon} size={18} className="mr-1 inline-block align-[-3px]" />}{current.title}
             </button>
             <p className="tabular mt-1 font-mono text-[12.5px] text-muted">
               {hhmm(start)}–{hhmm(start + current.durationMin)} · {durationLabel(current.durationMin)}
@@ -472,7 +473,7 @@ export function NowPanel({
               onClick={() => onOpenBlock(next.id)}
               className="mt-1 block w-full truncate text-left text-[15px] font-medium"
             >
-              {next.kind === 'break' ? 'Pausa' : <>{next.icon && <span className="mr-1" aria-hidden>{next.icon}</span>}{next.title}</>}
+              {next.kind === 'break' ? 'Pausa' : <>{next.icon && <EventIcon value={next.icon} size={14} className="mr-1 inline-block align-[-2px]" />}{next.title}</>}
             </button>
             <p className="tabular mt-0.5 font-mono text-[12px] text-muted">
               {hhmm(minutesOf(next.startsAt))} · en {durationLabel(minutesOf(next.startsAt) - nowMin)}

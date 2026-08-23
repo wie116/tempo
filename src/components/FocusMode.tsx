@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useClock, useStore } from '../store';
 import { dateKey, hhmm, minutesOf } from '../lib/time';
+import { EventIcon } from './EventIcon';
 
 const pad = (value: number) => String(Math.floor(value)).padStart(2, '0');
 
@@ -60,7 +61,7 @@ export function FocusMode({
           </span>
         </p>
         {current ? <>
-          <button onClick={() => onOpenBlock(current.id)} className="mt-8 max-w-full truncate text-[clamp(24px,5vw,44px)] font-semibold tracking-tight hover:underline">{current.icon && <span className="mr-2">{current.icon}</span>}{current.kind === 'break' ? 'Pausa' : current.title}</button>
+          <button onClick={() => onOpenBlock(current.id)} className="mt-8 max-w-full truncate text-[clamp(24px,5vw,44px)] font-semibold tracking-tight hover:underline">{current.icon && <EventIcon value={current.icon} size={30} className="mr-2 inline-block align-[-3px]" />}{current.kind === 'break' ? 'Pausa' : current.title}</button>
           {current.notes && <p className="mx-auto mt-3 max-w-xl whitespace-pre-wrap text-[14px] leading-relaxed text-muted">{current.notes}</p>}
           <div className="mt-9 h-2 overflow-hidden rounded-full bg-surface-2"><div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${progress * 100}%`, background: current.color }} /></div>
           <div className="mt-3 flex items-baseline justify-between gap-3"><span className="font-mono text-[12px] text-muted">{hhmm(minutesOf(current.startsAt))}</span><span className="font-mono text-[clamp(30px,6vw,54px)] font-bold" style={{ color: current.color }}>{pad(remaining / 60)}:{pad(remaining % 60)}</span><span className="font-mono text-[12px] text-muted">{hhmm(minutesOf(current.startsAt) + current.durationMin)}</span></div>

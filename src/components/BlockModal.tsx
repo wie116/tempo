@@ -7,8 +7,7 @@ import { UNTIL_PRESETS, WEEKDAY_LABELS, countSeries } from '../lib/repeat';
 import { Btn, ColorPicker, ConfirmModal, Field, Modal, NumField, Segmented, Tabs, TimeField, inputCls } from './Modal';
 import type { BlockStatus, RepeatMode } from '../types';
 import { isReadOnlyBlock } from '../lib/planning';
-
-const ICONS = ['🎓', '📝', '📞', '💪', '🧘', '🚗', '💡', '⭐', '📌', '🎯', '🩺', '✈️'];
+import { IconPicker } from './EventIcon';
 
 export function BlockModal({ id, onClose }: { id: string | null; onClose: () => void }) {
   const block = useStore((s) => (id ? s.blocks[id] ?? null : null));
@@ -20,6 +19,8 @@ export function BlockModal({ id, onClose }: { id: string | null; onClose: () => 
     return sourceTask ? s.lists.find((list) => list.id === sourceTask.listId)?.name ?? 'Sin clasificar' : 'Sin clasificar';
   });
   const updateBlock = useStore((s) => s.updateBlock);
+  const updateTask = useStore((s) => s.updateTask);
+  const lists = useStore((s) => s.lists);
   const removeBlock = useStore((s) => s.removeBlock);
   const removeSeries = useStore((s) => s.removeSeries);
   const removeSeriesFrom = useStore((s) => s.removeSeriesFrom);
@@ -35,6 +36,8 @@ export function BlockModal({ id, onClose }: { id: string | null; onClose: () => 
   const day = parseISO(block.startsAt);
   const start = minutesOf(block.startsAt);
   const isBreak = block.kind === 'break';
+  const isLinkedAdhoc = block.kind === 'adhoc' && Boolean(task) && !block.seriesId;
+  const todoLists = lists.filter((list) => list.scope === 'todo');
   const readOnly = isReadOnlyBlock(block);
 
   if (readOnly) return <Modal open onClose={onClose} title={block.title || 'Evento de Google Calendar'}
@@ -53,7 +56,7 @@ export function BlockModal({ id, onClose }: { id: string | null; onClose: () => 
     setBlockRecurrence(block.id, next, nextUntil, nextWeekdays);
 
   return <>
-    <Modal open onClose={onClose} title={isBreak ? 'Pausa' : `${block.icon ? `${block.icon} ` : ''}${block.title || 'Bloque'}`}
+    <Modal open onClose={onClose} title={isBreak ? 'Pausa' : block.title || 'Bloque'}
       subtitle={`${fmt(day, "EEEE d 'de' LLLL")} · ${hhmm(start)}–${hhmm(start + block.durationMin)} · ${groupName}`} size="sm"
       footer={<><Btn variant="danger" onClick={() => { removeBlock(block.id); onClose(); }}>Eliminar esta</Btn>
         <Btn onClick={() => { duplicateBlock(block.id); onClose(); }}>Duplicar</Btn><Btn variant="primary" onClick={onClose}>Listo</Btn></>}>
@@ -63,8 +66,13 @@ export function BlockModal({ id, onClose }: { id: string | null; onClose: () => 
       ]} />
 
       {tab === 'general' && <div className="space-y-4 p-5">
-        {!isBreak && <Field label="Título" hint={task ? `Esta ocurrencia nació de “${task.title}”; los cambios quedan en la agenda.` : undefined}>
+        {!isBreak && <Field label="Título" hint={isLinkedAdhoc ? 'Este título también se actualiza en el To-Do vinculado.' : task ? `Esta ocurrencia nació de “${task.title}”; los cambios quedan en la agenda.` : undefined}>
           <input autoFocus value={block.title} onChange={(e) => updateBlock(block.id, { title: e.target.value })} className={inputCls} />
+        </Field>}
+        {isLinkedAdhoc && task && <Field label="Clasificación del To-Do" hint="El bloque y su tarea seguirán vinculados.">
+          <select value={task.listId} onChange={(e) => updateTask(task.id, { listId: e.target.value, inbox: false })} className={inputCls}>
+            {todoLists.map((list) => <option key={list.id} value={list.id}>{list.name}</option>)}
+          </select>
         </Field>}
         <div className="grid grid-cols-2 gap-3"><Field label="Empieza"><TimeField value={start} onCommit={(value) => updateBlock(block.id, { startsAt: isoFor(day, value) })} max={24 * 60 - block.durationMin} /></Field>
           <Field label="Dura"><NumField value={block.durationMin} onCommit={(v) => v && updateBlock(block.id, { durationMin: v })} suffix="min" /></Field></div>
@@ -74,10 +82,11 @@ export function BlockModal({ id, onClose }: { id: string | null; onClose: () => 
       </div>}
 
       {tab === 'details' && <div className="space-y-4 p-5">
-        {!isBreak && <Field label="Ícono de esta ocurrencia" hint="Destacá examen, viaje, llamada u otro contexto puntual."><div className="flex flex-wrap gap-2">
-          <button onClick={() => updateBlock(block.id, { icon: null })} className="grid h-9 min-w-9 place-items-center rounded-lg border border-line px-2 text-[11px] text-muted">Sin</button>
-          {ICONS.map((icon) => <button key={icon} onClick={() => updateBlock(block.id, { icon })} aria-label={`Usar ${icon}`}
-            className="grid h-9 w-9 place-items-center rounded-lg border text-lg" style={{ borderColor: block.icon === icon ? 'var(--accent)' : 'var(--border)', background: block.icon === icon ? 'var(--surface-2)' : undefined }}>{icon}</button>)}</div></Field>}
+        {!isBreak && <div>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-[0.12em] text-muted">Ícono de esta ocurrencia</span>
+          <IconPicker value={block.icon} onChange={(icon) => updateBlock(block.id, { icon })} />
+          <span className="mt-1 block text-[11px] leading-snug text-muted">Clasificá visualmente este evento sin modificar otras ocurrencias.</span>
+        </div>}
         <Field label="Comentario de esta ocurrencia"><textarea rows={4} value={block.notes} onChange={(e) => updateBlock(block.id, { notes: e.target.value })}
           placeholder="Ej.: examen parcial, llevar documentación…" className={`${inputCls} resize-y`} /></Field>
         <label className="flex items-start gap-2.5 rounded-lg border border-line px-3 py-2.5"><input type="checkbox" checked={block.pinned}

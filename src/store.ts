@@ -408,10 +408,23 @@ export const useStore = create<State>()(
           const merged = normalizeBlock({ ...prev, ...patch });
           const next = { ...s.blocks, [id]: merged };
           const timeChanged = merged.startsAt !== prev.startsAt || merged.durationMin !== prev.durationMin;
+          // Los bloques creados directamente en la agenda nacen junto a un
+          // To-Do auxiliar. Mientras sigan siendo una ocurrencia aislada,
+          // mantenemos ambos lados alineados sin alterar plantillas ni series.
+          const linkedPatch = prev.kind === 'adhoc' && prev.taskId && !prev.seriesId
+            ? {
+                ...(patch.title !== undefined ? { title: merged.title } : {}),
+                ...(patch.color !== undefined ? { color: merged.color } : {}),
+                ...(patch.durationMin !== undefined ? { estimatedMin: merged.durationMin } : {}),
+              }
+            : null;
           return {
             blocks: timeChanged
               ? packDay(next, merged.startsAt.slice(0, 10), [id], 24 * 60)
               : next,
+            ...(linkedPatch ? {
+              tasks: s.tasks.map((task) => task.id === prev.taskId ? { ...task, ...linkedPatch } : task),
+            } : {}),
           };
         }),
 

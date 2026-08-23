@@ -5,6 +5,7 @@ import { clamp, durationLabel, hhmm, minToPx, minutesOf, pxToMin } from '../lib/
 import { startPointerGesture } from '../lib/gesture';
 import { isReadOnlyBlock } from '../lib/planning';
 import { ConfirmModal } from './Modal';
+import { EventIcon } from './EventIcon';
 
 interface Props {
   block: Block;
@@ -190,7 +191,7 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
             done ? 'line-through' : '',
           ].join(' ')}
         >
-          {block.icon && <span className="mr-1" aria-hidden>{block.icon}</span>}{block.title}
+          {block.icon && <EventIcon value={block.icon} size={tiny ? 12 : 14} className="mr-1 inline-block align-[-2px]" />}{block.title}
         </p>
         {tiny && (
           <span className="tabular shrink-0 pr-5 font-mono text-[10px] text-muted">{hhmm(startMin)}</span>
