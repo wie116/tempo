@@ -1,2 +1,5 @@
 [functions.google-calendar-callback]
 verify_jwt = false
+
+[functions.admin-analytics]
+verify_jwt = true

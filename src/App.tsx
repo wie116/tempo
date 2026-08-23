@@ -8,6 +8,7 @@ import { useAuth } from './hooks/useAuth';
 import { initHistory, redo, undo } from './lib/history';
 import { holdPulls, syncNow } from './lib/sync';
 import { openFocusPictureInPicture, supportsDocumentPictureInPicture } from './lib/documentPip';
+import { isAdminEmail } from './lib/admin';
 import { AuthScreen } from './components/AuthScreen';
 import { TopBar } from './components/TopBar';
 import { Toolbar } from './components/Toolbar';
@@ -28,6 +29,7 @@ const TodayModal = lazy(() => import('./components/TodayModal').then((m) => ({ d
 const OnboardingModal = lazy(() => import('./components/OnboardingModal').then((m) => ({ default: m.OnboardingModal })));
 const CommandPalette = lazy(() => import('./components/CommandPalette').then((m) => ({ default: m.CommandPalette })));
 const FocusMode = lazy(() => import('./components/FocusMode').then((m) => ({ default: m.FocusMode })));
+const AdminModal = lazy(() => import('./components/AdminModal').then((m) => ({ default: m.AdminModal })));
 
 /** La vista de día no necesita todo el ancho: una columna estirada se lee peor. */
 const WIDTH = { day: 'max-w-2xl', week: 'max-w-6xl', month: 'max-w-6xl' };
@@ -56,6 +58,7 @@ export default function App() {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
   const [integrationNotice, setIntegrationNotice] = useState<string | null>(null);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [todayOpen, setTodayOpen] = useState(false);
@@ -136,6 +139,7 @@ export default function App() {
 
   const anchor = parseISO(cursor);
   const days = view === 'day' ? [anchor] : weekDays(anchor, mondayFirst);
+  const isAdmin = cloudEnabled && isAdminEmail(session?.user.email);
 
   useClockEngine();
 
@@ -265,6 +269,7 @@ export default function App() {
         onOpenActivity={() => setActivityOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenSearch={() => setCommandOpen(true)}
+        onOpenAdmin={isAdmin ? () => setAdminOpen(true) : undefined}
       />
 
       <div className="flex min-h-0 flex-1">
@@ -320,6 +325,7 @@ export default function App() {
           onClose={() => { setSettingsOpen(false); setIntegrationNotice(null); }}
           integrationNotice={integrationNotice}
         />
+        {isAdmin && <AdminModal open={adminOpen} onClose={() => setAdminOpen(false)} />}
         <TasksModal open={tasksOpen} onClose={() => setTasksOpen(false)} />
         <TodayModal
           open={todayOpen}

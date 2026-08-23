@@ -174,6 +174,25 @@ La callback es pública porque Google redirige hacia ella sin una sesión de Sup
 La operación sigue protegida mediante `state`, PKCE, expiración de diez minutos y consumo único.
 Las demás funciones sí exigen la sesión del usuario.
 
+### Panel administrativo
+
+El botón **Admin** aparece únicamente para `wiescudero@gmail.com`. La interfaz
+también valida el email dentro de la Edge Function: ocultar el botón no es la
+medida de seguridad.
+
+1. Ejecutá `supabase/admin_analytics.sql` en SQL Editor para agregar el registro
+   diario de actividad y las funciones agregadas sin repetir migraciones antiguas.
+2. Desplegá la función protegida:
+
+   ```bash
+   supabase functions deploy admin-analytics
+   ```
+
+No requiere secretos nuevos: utiliza `SUPABASE_URL`, `SUPABASE_ANON_KEY` y
+`SUPABASE_SERVICE_ROLE_KEY`, que Supabase proporciona automáticamente a sus
+Edge Functions. El panel recibe únicamente conteos y porcentajes; no expone
+correos, nombres de tareas ni agendas de otros usuarios.
+
 Al seleccionar calendarios, **Sincronizar ahora** importa los próximos seis meses como bloques protegidos de solo lectura y conserva un mes anterior para revisión. Tempo organiza alrededor de esos eventos.
 
 ## Contrato IA / MCP

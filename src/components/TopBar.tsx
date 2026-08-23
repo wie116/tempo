@@ -4,6 +4,7 @@ import { SyncBadge } from './SyncBadge';
 import { dateKey, fmt } from '../lib/time';
 import type { ViewMode } from '../types';
 import { usePlannerLog } from '../lib/plannerLog';
+import { ShieldCheck } from 'lucide-react';
 
 const VIEWS: { id: ViewMode; label: string; short: string }[] = [
   { id: 'day', label: 'Día', short: 'D' },
@@ -12,7 +13,7 @@ const VIEWS: { id: ViewMode; label: string; short: string }[] = [
 ];
 
 export function TopBar({
-  onToggleSidebar, onOpenTasks, onOpenToday, onOpenActivity, onOpenSettings, onOpenSearch,
+  onToggleSidebar, onOpenTasks, onOpenToday, onOpenActivity, onOpenSettings, onOpenSearch, onOpenAdmin,
 }: {
   onToggleSidebar: () => void;
   onOpenTasks: () => void;
@@ -20,6 +21,7 @@ export function TopBar({
   onOpenActivity: () => void;
   onOpenSettings: () => void;
   onOpenSearch: () => void;
+  onOpenAdmin?: () => void;
 }) {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
@@ -89,6 +91,16 @@ export function TopBar({
       <button onClick={onOpenSearch} className="hidden items-center gap-1.5 rounded-lg border border-line px-2 py-1.5 text-[11.5px] text-muted hover:text-ink lg:flex" title="Buscar o ejecutar · Ctrl+K">
         Buscar <kbd className="rounded bg-surface-2 px-1 font-mono text-[9px]">Ctrl K</kbd>
       </button>
+
+      {onOpenAdmin && <button
+        onClick={onOpenAdmin}
+        className="flex items-center gap-1.5 rounded-lg border border-line px-2 py-1.5 text-muted transition-colors hover:border-[var(--accent)] hover:bg-surface-2 hover:text-ink"
+        aria-label="Abrir administración"
+        title="Administración"
+      >
+        <ShieldCheck size={16} strokeWidth={1.8} />
+        <span className="hidden text-[12px] font-medium 2xl:inline">Admin</span>
+      </button>}
 
       <button
         onClick={onOpenSettings}

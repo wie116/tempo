@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { cloudEnabled, supabase } from '../lib/supabase';
 import { startSync, stopSync } from '../lib/sync';
+import { startActivityHeartbeat } from '../lib/activity';
 
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
@@ -30,6 +31,11 @@ export function useAuth() {
       sub.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!session) return;
+    return startActivityHeartbeat();
+  }, [session?.user.id]);
 
   return { session, ready, cloudEnabled };
 }
