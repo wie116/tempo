@@ -5,10 +5,19 @@ import { dateKey, hhmm, minutesOf } from '../lib/time';
 
 const pad = (value: number) => String(Math.floor(value)).padStart(2, '0');
 
-export function FocusMode({ open, onClose, onOpenBlock }: { open: boolean; onClose: () => void; onOpenBlock: (id: string) => void }) {
+export function FocusMode({
+  open, onClose, onOpenBlock, portalWindow = null,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onOpenBlock: (id: string) => void;
+  portalWindow?: Window | null;
+}) {
   const blocks = useStore((s) => s.blocks);
   const setStatus = useStore((s) => s.setStatus);
   const extendBlock = useStore((s) => s.extendBlock);
+  const theme = useStore((s) => s.settings.theme);
+  const fontFamily = useStore((s) => s.settings.fontFamily);
   const now = useClock((s) => s.now);
   const date = new Date(now);
   const nowMin = date.getHours() * 60 + date.getMinutes();
@@ -22,18 +31,27 @@ export function FocusMode({ open, onClose, onOpenBlock }: { open: boolean; onClo
 
   useEffect(() => {
     if (!open) return;
+    const eventWindow = portalWindow ?? window;
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
+    eventWindow.addEventListener('keydown', onKey);
     let lock: { release: () => Promise<void> } | null = null;
     const wakeLock = (navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<{ release: () => Promise<void> }> } }).wakeLock;
     if (wakeLock) void wakeLock.request('screen').then((value) => { lock = value; }).catch(() => {});
-    return () => { window.removeEventListener('keydown', onKey); void lock?.release(); };
-  }, [open, onClose]);
+    return () => { eventWindow.removeEventListener('keydown', onKey); void lock?.release(); };
+  }, [open, onClose, portalWindow]);
+
+  useEffect(() => {
+    if (!portalWindow) return;
+    portalWindow.document.documentElement.dataset.theme = theme;
+    portalWindow.document.documentElement.dataset.font = fontFamily;
+  }, [portalWindow, theme, fontFamily]);
 
   if (!open) return null;
+  const floating = Boolean(portalWindow);
+  const portalDocument = portalWindow?.document ?? document;
   return createPortal(<div className="fixed inset-0 z-[70] flex flex-col bg-bg text-ink">
-    <header className="flex items-center justify-between border-b border-line px-5 py-3"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Tempo</p><h2 className="text-[14px] font-semibold">Modo Enfoque</h2></div><button onClick={onClose} className="rounded-lg border border-line px-3 py-2 text-[12px] text-muted hover:text-ink">Salir · Esc</button></header>
-    <main className="mx-auto grid min-h-0 w-full max-w-5xl flex-1 place-items-center overflow-y-auto p-6">
+    <header className={`flex items-center justify-between border-b border-line ${floating ? 'px-4 py-2.5' : 'px-5 py-3'}`}><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Tempo</p><h2 className="text-[14px] font-semibold">{floating ? 'Concentración' : 'Modo Enfoque'}</h2></div><button onClick={onClose} className="rounded-lg border border-line px-3 py-2 text-[12px] text-muted hover:text-ink">Salir · Esc</button></header>
+    <main className={`mx-auto grid min-h-0 w-full max-w-5xl flex-1 place-items-center overflow-y-auto ${floating ? 'p-4' : 'p-6'}`}>
       <div className="w-full max-w-2xl text-center">
         <p className="font-mono text-[clamp(54px,12vw,112px)] font-bold leading-none tracking-[-0.08em]">
           {pad(date.getHours())}:{pad(date.getMinutes())}
@@ -51,5 +69,5 @@ export function FocusMode({ open, onClose, onOpenBlock }: { open: boolean; onClo
       </div>
     </main>
     <footer className="border-t border-line px-5 py-3 text-center text-[11px] text-muted">{next ? `Después · ${next.title} · ${hhmm(minutesOf(next.startsAt))}` : 'Último bloque del día'}</footer>
-  </div>, document.body);
+  </div>, portalDocument.body);
 }

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { addDays, parseISO } from 'date-fns';
 import { useStore, useToasts, useUI } from './store';
 import { dateKey, minutesOf, weekDays } from './lib/time';
@@ -7,6 +7,7 @@ import { useClockEngine } from './hooks/useClockEngine';
 import { useAuth } from './hooks/useAuth';
 import { initHistory, redo, undo } from './lib/history';
 import { holdPulls, syncNow } from './lib/sync';
+import { openFocusPictureInPicture, supportsDocumentPictureInPicture } from './lib/documentPip';
 import { AuthScreen } from './components/AuthScreen';
 import { TopBar } from './components/TopBar';
 import { Toolbar } from './components/Toolbar';
@@ -61,11 +62,63 @@ export default function App() {
   const [activityOpen, setActivityOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [focusOpen, setFocusOpen] = useState(false);
+  const [focusWindow, setFocusWindow] = useState<Window | null>(null);
+  const focusWindowRef = useRef<Window | null>(null);
   const [blockId, setBlockId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [autoplan, setAutoplan] = useState<'default' | 'tomorrow' | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(() => localStorage.getItem('tempo-onboarding-v2') !== 'done');
   const finishOnboarding = () => { localStorage.setItem('tempo-onboarding-v2', 'done'); setOnboardingOpen(false); };
+  const closeFocus = () => {
+    const floating = focusWindowRef.current;
+    focusWindowRef.current = null;
+    if (floating && !floating.closed) floating.close();
+    setFocusWindow(null);
+    setFocusOpen(false);
+  };
+  const openRegularFocus = () => {
+    const floating = focusWindowRef.current;
+    focusWindowRef.current = null;
+    if (floating && !floating.closed) floating.close();
+    setFocusWindow(null);
+    setActivityOpen(false);
+    setFocusOpen(true);
+  };
+  const openFloatingFocus = async () => {
+    setActivityOpen(false);
+    if (!supportsDocumentPictureInPicture()) {
+      useToasts.getState().push({
+        title: 'Ventana flotante no disponible',
+        body: 'Abrimos el modo Enfoque normal. Probá con Chrome o Edge actualizado.',
+        kind: 'info', ttl: 3200,
+      });
+      openRegularFocus();
+      return;
+    }
+    try {
+      const floating = await openFocusPictureInPicture();
+      if (!floating) {
+        openRegularFocus();
+        return;
+      }
+      focusWindowRef.current = floating;
+      setFocusWindow(floating);
+      setFocusOpen(true);
+      floating.addEventListener('pagehide', () => {
+        if (focusWindowRef.current !== floating) return;
+        focusWindowRef.current = null;
+        setFocusWindow(null);
+        setFocusOpen(false);
+      }, { once: true });
+    } catch (error: any) {
+      useToasts.getState().push({
+        title: 'No se pudo abrir la ventana flotante',
+        body: error?.message ?? 'El navegador rechazó la solicitud.',
+        kind: 'info', ttl: 3200,
+      });
+      openRegularFocus();
+    }
+  };
   const locateBlock = (id: string) => {
     const block = useStore.getState().blocks[id];
     if (!block) return;
@@ -250,14 +303,15 @@ export default function App() {
           onOpenBlock={setBlockId}
           onLocateBlock={locateBlock}
           onAutoplan={() => { setActivityOpen(false); setAutoplan('default'); }}
-          onOpenFocus={() => { setActivityOpen(false); setFocusOpen(true); }}
+          onOpenFocus={openRegularFocus}
+          onOpenFloating={() => void openFloatingFocus()}
           mobileOpen={activityOpen}
           onCloseMobile={() => setActivityOpen(false)}
         />
       </div>
 
-      <TimerBar onOpenBlock={setBlockId} onOpenToday={() => setTodayOpen(true)} onOpenFocus={() => setFocusOpen(true)} />
-      <MobileNav onPlan={() => setSidebarOpen(true)} onReview={() => setTodayOpen(true)} onFocus={() => setFocusOpen(true)} onActivity={() => setActivityOpen(true)} />
+      <TimerBar onOpenBlock={setBlockId} onOpenToday={() => setTodayOpen(true)} onOpenFocus={openRegularFocus} />
+      <MobileNav onPlan={() => setSidebarOpen(true)} onReview={() => setTodayOpen(true)} onFocus={openRegularFocus} onActivity={() => setActivityOpen(true)} />
       <Toasts />
 
       <Suspense fallback={null}>
@@ -291,14 +345,14 @@ export default function App() {
           open={commandOpen}
           onClose={() => setCommandOpen(false)}
           onReview={() => setTodayOpen(true)}
-          onFocus={() => setFocusOpen(true)}
+          onFocus={openRegularFocus}
           onAutoplan={() => setAutoplan('default')}
           onTasks={() => setTasksOpen(true)}
           onSettings={() => setSettingsOpen(true)}
           onLocateBlock={locateBlock}
           onEditTask={setTaskId}
         />
-        <FocusMode open={focusOpen} onClose={() => setFocusOpen(false)} onOpenBlock={(id) => { setFocusOpen(false); setBlockId(id); }} />
+        <FocusMode open={focusOpen} portalWindow={focusWindow} onClose={closeFocus} onOpenBlock={(id) => { closeFocus(); setBlockId(id); }} />
       </Suspense>
     </div>
   );

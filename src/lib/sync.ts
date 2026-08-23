@@ -3,6 +3,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { Block, List, Settings, Task } from '../types';
 import { useStore } from '../store';
 import { supabase } from './supabase';
+import { fetchAllPages } from './pagination';
 
 export type SyncStatus = 'off' | 'idle' | 'syncing' | 'error';
 
@@ -113,40 +114,59 @@ let channel: RealtimeChannel | null = null;
 
 /* ---------- Bajar todo ---------- */
 
+type SyncTable = 'lists' | 'tasks' | 'blocks';
+
+/** Descarga una tabla completa sin depender del máximo de filas de PostgREST. */
+async function fetchAllRows(table: SyncTable): Promise<any[]> {
+  const client = supabase;
+  if (!client) return [];
+  return fetchAllPages(async (from, to) => {
+    // El orden estable es obligatorio al paginar: evita saltos o duplicados
+    // entre páginas aunque Postgres cambie su plan de ejecución.
+    const { data, error } = await client
+      .from(table)
+      .select('*')
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (error) throw new Error(`${table}: ${error.message}`);
+    return data ?? [];
+  });
+}
+
 export async function pullAll(): Promise<void> {
   if (!supabase || !userId) return;
   useSync.getState().set({ status: 'syncing', lastError: null });
 
-  const [l, t, b, p] = await Promise.all([
-    supabase.from('lists').select('*'),
-    supabase.from('tasks').select('*'),
-    supabase.from('blocks').select('*'),
-    supabase.from('profiles').select('settings').eq('id', userId).maybeSingle(),
-  ]);
+  try {
+    const [listRows, taskRows, blockRows, profile] = await Promise.all([
+      fetchAllRows('lists'),
+      fetchAllRows('tasks'),
+      fetchAllRows('blocks'),
+      supabase.from('profiles').select('settings').eq('id', userId).maybeSingle(),
+    ]);
+    if (profile.error) throw profile.error;
 
-  const err = l.error || t.error || b.error || p.error;
-  if (err) {
-    useSync.getState().set({ status: 'error', lastError: err.message });
-    return;
+    const lists = listRows.map(rowToList).sort((a, c) => a.order - c.order);
+    const tasks = taskRows.map(rowToTask);
+    const blocks: Record<string, Block> = {};
+    for (const row of blockRows) {
+      const blk = rowToBlock(row);
+      blocks[blk.id] = blk;
+    }
+
+    applyingRemote = true;
+    const current = useStore.getState();
+    const remoteSettings = (profile.data?.settings ?? {}) as Partial<Settings>;
+    const settings = { ...current.settings, ...remoteSettings };
+    useStore.setState({ lists, tasks, blocks, settings });
+    applyingRemote = false;
+
+    synced = snapshotOf(lists, tasks, blocks, settings);
+    useSync.getState().set({ status: 'idle', lastSyncedAt: Date.now(), pendingChanges: false });
+  } catch (error: any) {
+    applyingRemote = false;
+    useSync.getState().set({ status: 'error', lastError: error?.message ?? 'No se pudieron bajar todos los datos' });
   }
-
-  const lists = (l.data ?? []).map(rowToList).sort((a, c) => a.order - c.order);
-  const tasks = (t.data ?? []).map(rowToTask);
-  const blocks: Record<string, Block> = {};
-  for (const row of b.data ?? []) {
-    const blk = rowToBlock(row);
-    blocks[blk.id] = blk;
-  }
-
-  applyingRemote = true;
-  const current = useStore.getState();
-  const remoteSettings = (p.data?.settings ?? {}) as Partial<Settings>;
-  const settings = { ...current.settings, ...remoteSettings };
-  useStore.setState({ lists, tasks, blocks, settings });
-  applyingRemote = false;
-
-  synced = snapshotOf(lists, tasks, blocks, settings);
-  useSync.getState().set({ status: 'idle', lastSyncedAt: Date.now(), pendingChanges: false });
 }
 
 /** Primera vez: si la nube está vacía y acá hay datos, los subimos. */

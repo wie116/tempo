@@ -7,6 +7,7 @@ import { expandSeries } from '../src/lib/repeat';
 import { findAvailableStart } from '../src/lib/conflicts';
 import { parseTaskDraft } from '../src/lib/taskCapture';
 import { parseAiPlan } from '../src/lib/mcpBridge';
+import { fetchAllPages } from '../src/lib/pagination';
 
 const block = (id: string, startsAt: string, durationMin = 30, pinned = false): Block => ({
   id, taskId: null, title: id, color: '#123456', startsAt, durationMin,
@@ -185,4 +186,17 @@ test('el puente MCP acepta únicamente planes versionados y acciones conocidas',
   assert.deepEqual(plan.actions[0], { type: 'create-task', title: 'Informe', plannedDate: '2026-08-23', estimatedMin: 40 });
   assert.throws(() => parseAiPlan(JSON.stringify({ schema: 'otro', actions: [] })));
   assert.throws(() => parseAiPlan(JSON.stringify({ schema: 'tempo.ai-plan.v1', actions: [{ type: 'delete-everything' }] })));
+});
+
+test('la sincronización reúne más de mil filas mediante páginas inclusivas', async () => {
+  const source = Array.from({ length: 1118 }, (_, index) => ({ id: index }));
+  const ranges: Array<[number, number]> = [];
+  const result = await fetchAllPages(async (from, to) => {
+    ranges.push([from, to]);
+    return source.slice(from, to + 1);
+  }, 500);
+
+  assert.equal(result.length, 1118);
+  assert.deepEqual(result.map((row) => row.id), source.map((row) => row.id));
+  assert.deepEqual(ranges, [[0, 499], [500, 999], [1000, 1499]]);
 });

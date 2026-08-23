@@ -14,12 +14,13 @@ const R_OUT = 92;
 const R_IN = 76;
 
 export function NowPanel({
-  onOpenBlock, onLocateBlock, onAutoplan, onOpenFocus, mobileOpen = false, onCloseMobile,
+  onOpenBlock, onLocateBlock, onAutoplan, onOpenFocus, onOpenFloating, mobileOpen = false, onCloseMobile,
 }: {
   onOpenBlock: (id: string) => void;
   onLocateBlock: (id: string) => void;
   onAutoplan: () => void;
   onOpenFocus: () => void;
+  onOpenFloating: () => void;
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
 }) {
@@ -168,7 +169,16 @@ export function NowPanel({
           ))}
         </div>
 
-        <button onClick={onOpenFocus} className="mb-3 w-full rounded-lg border border-line px-3 py-2 text-[11.5px] font-medium text-muted transition-colors hover:border-[var(--accent)] hover:text-ink">Abrir modo Enfoque</button>
+        <div className="mb-3 grid grid-cols-2 gap-2">
+          <button onClick={onOpenFocus} className="rounded-lg border border-line px-2 py-2 text-[11.5px] font-medium text-muted transition-colors hover:border-[var(--accent)] hover:text-ink">Modo Enfoque</button>
+          <button onClick={onOpenFloating} title="Abrir una ventana siempre visible" className="flex items-center justify-center gap-1.5 rounded-lg border border-line px-2 py-2 text-[11.5px] font-medium text-muted transition-colors hover:border-[var(--accent)] hover:text-ink">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+              <rect x="2.5" y="3" width="11" height="9.5" rx="1.8" stroke="currentColor" strokeWidth="1.3" />
+              <path d="M8.5 6h3v3M11.5 6 8 9.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Flotante
+          </button>
+        </div>
 
         {clockStyle === 'rings' && <>
         <div className="relative mx-auto" style={{ width: SIZE, height: SIZE }}>
