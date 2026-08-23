@@ -124,6 +124,8 @@ export interface Settings {
   clockStyle: 'rings' | 'focus' | 'stats';
   /** Al mover un bloque, arrastrar con él los que vienen después. */
   chainMove: boolean;
+  /** En pantallas móviles evita crear, mover o redimensionar desde la agenda. */
+  mobileEditLocked: boolean;
   defaultBlockMin: number;
   soundEnabled: boolean;
   volume: number;

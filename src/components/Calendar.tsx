@@ -7,6 +7,7 @@ import {
 } from '../lib/time';
 import { DayColumn } from './DayColumn';
 import { insertionAroundTarget } from '../lib/planning';
+import { startPointerGesture } from '../lib/gesture';
 
 export function Calendar({
   days, onOpenBlock,
@@ -184,6 +185,7 @@ export function Calendar({
     };
 
     const onMove = (e: PointerEvent) => {
+      if (e.pointerType === 'touch' && e.cancelable) e.preventDefault();
       lastPointer = { x: e.clientX, y: e.clientY };
       scheduleFrame();
     };
@@ -256,7 +258,7 @@ export function Calendar({
     document.body.style.cursor = 'grabbing';
     document.body.style.userSelect = 'none';
 
-    window.addEventListener('pointermove', onMove, { passive: true });
+    window.addEventListener('pointermove', onMove, { passive: false });
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
     window.addEventListener('keydown', onKey);
@@ -277,25 +279,38 @@ export function Calendar({
     if (e.button !== 0) return;
     const p = pointToGrid(e.clientX, e.clientY);
     if (!p) return;
-    clearSelection();
     const start = clamp(snap(p.min), dayStartMin, dayEndMin - SLOT_MIN);
 
+    if (e.pointerType === 'touch') {
+      // Navegar es el gesto principal en celular. Un toque o un desplazamiento
+      // común no crean nada; sólo una pulsación sostenida entra en edición.
+      if (settings.mobileEditLocked) return;
+      startPointerGesture(e, {
+        holdMs: 520,
+        slopPx: 12,
+        onTap: clearSelection,
+        onDrag: () => {
+          clearSelection();
+          useDrag.getState().begin({
+            mode: tool === 'box' ? 'box' : 'range',
+            title: tool === 'box' ? '' : 'Bloque',
+            color: 'var(--accent)', kind: 'adhoc',
+            grabOffsetMin: 0, durationMin: tool === 'box' ? SLOT_MIN : settings.defaultBlockMin,
+            dayIndex: p.dayIndex, startMin: start,
+            anchorMin: start, anchorDayIndex: p.dayIndex, moved: false,
+          });
+        },
+      });
+      return;
+    }
+
+    clearSelection();
     if (tool === 'box') {
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
       useDrag.getState().begin({
         mode: 'box', title: '', color: 'var(--accent)', kind: 'adhoc',
         grabOffsetMin: 0, durationMin: SLOT_MIN,
         dayIndex: p.dayIndex, startMin: start, anchorMin: start, anchorDayIndex: p.dayIndex, moved: false,
-      });
-      return;
-    }
-
-    if (e.pointerType === 'touch') {
-      // En táctil el arrastre pelearía con el scroll: marcamos la franja por defecto
-      setRange({
-        dayKey: dateKey(days[p.dayIndex]), dayIndex: p.dayIndex,
-        startMin: clamp(start, dayStartMin, dayEndMin - settings.defaultBlockMin),
-        durationMin: settings.defaultBlockMin,
       });
       return;
     }

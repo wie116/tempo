@@ -149,6 +149,9 @@ body {
 @media (max-width: 639px) {
   .card { border-radius: 10px; }
   .modal-panel > footer { padding-bottom: max(.75rem, env(safe-area-inset-bottom)); }
+  /* Los bordes visuales siguen siendo finos, pero el área táctil permite
+     sostener y redimensionar un bloque con precisión. */
+  .block-resize-handle { height: 18px !important; }
 }
 @keyframes fade { from { opacity: 0; } }
 @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.98); } }

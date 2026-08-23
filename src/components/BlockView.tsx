@@ -18,6 +18,7 @@ interface Props {
 
 function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount, onOpen }: Props) {
   const slotPx = useStore((s) => s.settings.slotPx);
+  const mobileEditLocked = useStore((s) => s.settings.mobileEditLocked);
   const groupName = useStore((s) => {
     if (block.source === 'google-calendar') return 'Google Calendar';
     if (block.kind === 'break') return 'Pausa';
@@ -69,6 +70,7 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
 
   const grab = (e: React.PointerEvent, mode: 'move' | 'resize' | 'resizeTop') => {
     if (tool === 'box') return; // en modo caja el gesto es para seleccionar
+    if (e.pointerType === 'touch' && mobileEditLocked) { e.stopPropagation(); return; }
     if (block.pinned || readOnly) { e.stopPropagation(); focusBlock(block.id); return; }
     e.stopPropagation();
     const modifier = e.ctrlKey || e.metaKey;
@@ -86,15 +88,8 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
         // Leemos el store en este instante en vez de usar el valor del render
         // anterior; así Ctrl+clic seguido de arrastre nunca pierde integrantes.
         const liveSelection = useUI.getState().multi;
-        // En táctil, la primera pulsación larga incorpora el bloque a la
-        // selección. Una pulsación larga posterior sobre cualquiera de los
-        // seleccionados mueve el grupo completo. Así no hace falta una tecla Ctrl.
-        if (pointer.pointerType === 'touch' && mode === 'move' && !liveSelection.includes(block.id)) {
-          setMulti([...liveSelection, block.id]);
-          focusBlock(block.id);
-          navigator.vibrate?.(18);
-          return;
-        }
+        // En táctil una sola pulsación larga ya toma el bloque. Si pertenecía
+        // a una selección múltiple, mueve el grupo completo.
         const groupIds = mode === 'move' && liveSelection.includes(block.id) ? liveSelection : [block.id];
         if (mode === 'move') setMulti(groupIds);
         focusBlock(block.id);
@@ -110,6 +105,8 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
           copy: mode === 'move' && modifier,
         });
       },
+      holdMs: 520,
+      slopPx: 12,
       onTap: () => {
         if (mode !== 'move') { focusBlock(block.id); return; }
         if (modifier) {
@@ -153,7 +150,7 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
         top, height,
         left: `calc(${(lane / laneCount) * 100}% + 2px)`,
         width: `calc(${100 / laneCount}% - 4px)`,
-        touchAction: 'pan-y',
+        touchAction: preview ? 'none' : 'pan-y',
         borderStyle: block.pinned ? 'dashed' : undefined,
         borderWidth: block.pinned ? 1.5 : undefined,
         cursor: block.pinned || readOnly ? 'default' : tool === 'box' ? 'crosshair' : 'grab',
@@ -284,9 +281,8 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
           style={block.pinned ? { background: 'var(--pin)', color: '#fff' } : { color: 'var(--muted)' }}
         >
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
-            <rect x="3.4" y="7" width="9.2" height="6.2" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-            <path d={block.pinned ? 'M5.7 7V5.2a2.3 2.3 0 0 1 4.6 0V7' : 'M5.7 7V5.2a2.3 2.3 0 0 1 4.4-.8'}
-              stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            <path d="M5.2 2.7h5.6M6.1 2.7l.5 4.1-2 2.2h6.8l-2-2.2.5-4.1M8 9v4.4"
+              stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
         <button
@@ -321,7 +317,7 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
         onPointerDown={(e) => grab(e, 'resizeTop')}
         role="button"
         aria-label={`Extender ${block.title} desde el inicio`}
-        className="absolute inset-x-0 top-0 z-50 flex cursor-ns-resize items-start justify-center"
+        className="block-resize-handle absolute inset-x-0 top-0 z-50 flex cursor-ns-resize items-start justify-center"
         style={{ touchAction: 'pan-y', height: Math.min(10, Math.max(3, height * 0.22)) }}
       >
         <span className="h-[3px] w-8 rounded-full bg-current opacity-0 transition-opacity group-hover:opacity-35" />
@@ -331,7 +327,7 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
         onPointerDown={(e) => grab(e, 'resize')}
         role="button"
         aria-label={`Extender ${block.title} desde el final`}
-        className="absolute inset-x-0 bottom-0 z-50 flex cursor-ns-resize items-end justify-center"
+        className="block-resize-handle absolute inset-x-0 bottom-0 z-50 flex cursor-ns-resize items-end justify-center"
         style={{ touchAction: 'pan-y', height: Math.min(10, Math.max(3, height * 0.22)) }}
       >
         <span className="h-[3px] w-8 rounded-full bg-current opacity-0 transition-opacity group-hover:opacity-35" />

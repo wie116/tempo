@@ -23,6 +23,7 @@ const DEFAULT_SETTINGS: Settings = {
   rightPanelOpen: true,
   clockStyle: 'rings',
   chainMove: false,
+  mobileEditLocked: false,
   defaultBlockMin: 10,
   soundEnabled: true,
   volume: 0.6,

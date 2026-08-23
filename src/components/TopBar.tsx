@@ -51,8 +51,8 @@ export function TopBar({
     : fmt(anchor, "'Semana del' d 'de' LLLL");
 
   return (
-    <header className="shrink-0 border-b border-line bg-surface px-2 py-1.5 sm:flex sm:items-center sm:gap-3 sm:px-3 sm:py-2">
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
+    <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5 border-b border-line bg-surface px-2 py-1.5 sm:gap-x-3 sm:px-3 sm:py-2">
+      <div className="col-span-3 flex min-w-0 items-center gap-1.5 sm:col-span-1 sm:gap-2">
       <button
         onClick={onToggleSidebar}
         className="relative rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-ink xl:hidden"
@@ -105,8 +105,7 @@ export function TopBar({
       </button>
       </div>
 
-      <div className="mt-1.5 flex items-center justify-between gap-2 sm:mt-0 sm:justify-end">
-      <div className="flex items-center rounded-xl bg-surface-2 p-0.5">
+      <div className="col-start-2 row-start-2 flex items-center rounded-xl bg-surface-2 p-0.5 sm:row-start-1">
         <button onClick={() => shift(-1)} className="rounded-lg px-2 py-1.5 text-[15px] leading-none text-muted hover:text-ink" aria-label="Anterior">‹</button>
         <button
           onClick={() => setCursor(dateKey(new Date()))}
@@ -119,6 +118,7 @@ export function TopBar({
         <button onClick={() => shift(1)} className="rounded-lg px-2 py-1.5 text-[15px] leading-none text-muted hover:text-ink" aria-label="Siguiente">›</button>
       </div>
 
+      <div className="col-start-3 row-start-2 flex items-center justify-self-end gap-2 sm:row-start-1">
       <div className="flex rounded-lg bg-surface-2 p-0.5">
         {VIEWS.map((v) => (
           <button

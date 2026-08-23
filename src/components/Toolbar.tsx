@@ -1,4 +1,4 @@
-import { useStore, useUI } from '../store';
+import { useDrag, useStore, useUI } from '../store';
 import type { Tool } from '../store';
 import { ZOOM_STEPS, durationLabel, hhmm, zoomStep } from '../lib/time';
 import { redo, undo, useHistory } from '../lib/history';
@@ -32,6 +32,8 @@ export function Toolbar({ onAutoplan }: { onAutoplan: () => void }) {
 
   return (
     <div className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-line bg-surface-2/40 px-2.5 py-2 sm:gap-2">
+      <MobileEditLock />
+
       <div className="flex rounded-lg border border-line bg-surface p-0.5">
         {TOOLS.map((t) => (
           <button
@@ -112,7 +114,7 @@ export function Toolbar({ onAutoplan }: { onAutoplan: () => void }) {
 }
 
 
-/** Candado: con esto activo, mover un bloque arrastra a los que vienen después. */
+/** Imán: con esto activo, mover un bloque atrae a los que vienen después. */
 function ChainLock() {
   const on = useStore((s) => s.settings.chainMove);
   const set = useStore((s) => s.updateSettings);
@@ -122,7 +124,7 @@ function ChainLock() {
       aria-pressed={on}
       title={
         on
-          ? 'Encadenado: al mover un bloque, los siguientes del día se mueven con él'
+          ? 'Imán activo: al mover un bloque, los siguientes del día se mueven con él'
           : 'Suelto: cada bloque se mueve solo'
       }
       className="rounded-lg border p-2 transition-colors"
@@ -133,13 +135,48 @@ function ChainLock() {
       }
     >
       <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden>
-        <rect x="3.2" y="7" width="9.6" height="6.4" rx="1.6" stroke="currentColor" strokeWidth="1.4" />
-        {on ? (
-          <path d="M5.6 7V5.2a2.4 2.4 0 0 1 4.8 0V7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-        ) : (
-          <path d="M5.6 7V5.2a2.4 2.4 0 0 1 4.6-.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-        )}
+        <path d="M3.4 2.8v5.1a4.6 4.6 0 0 0 9.2 0V2.8M3.4 5.5h3M9.6 5.5h3"
+          stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M3.4 2.8h3v2.7h-3zM9.6 2.8h3v2.7h-3z" fill="currentColor" opacity={on ? 1 : .55} />
       </svg>
+    </button>
+  );
+}
+
+
+/** Protección táctil: sólo existe en celular y no altera el escritorio. */
+function MobileEditLock() {
+  const locked = useStore((s) => s.settings.mobileEditLocked);
+  const updateSettings = useStore((s) => s.updateSettings);
+  const clearSelection = useUI((s) => s.clearSelection);
+  const endDrag = useDrag((s) => s.end);
+
+  const toggle = () => {
+    const next = !locked;
+    updateSettings({ mobileEditLocked: next });
+    if (next) {
+      endDrag();
+      clearSelection();
+    }
+  };
+
+  return (
+    <button
+      onClick={toggle}
+      aria-pressed={locked}
+      aria-label={locked ? 'Agenda móvil protegida. Desbloquear edición' : 'Agenda móvil editable. Bloquear edición'}
+      title={locked ? 'Protegida: tocá para permitir cambios táctiles' : 'Editable: tocá para proteger la agenda'}
+      className="flex shrink-0 items-center gap-1.5 rounded-lg border px-2 py-2 text-[11.5px] font-semibold transition-colors sm:hidden"
+      style={locked
+        ? { borderColor: 'var(--accent)', background: 'var(--accent)', color: 'var(--accent-fg)' }
+        : { borderColor: 'var(--border)', background: 'var(--surface)', color: 'var(--muted)' }}
+    >
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <rect x="3.2" y="7" width="9.6" height="6.2" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+        <path d={locked ? 'M5.5 7V5.1a2.5 2.5 0 0 1 5 0V7' : 'M5.5 7V5.1a2.5 2.5 0 0 1 4.8-.9'}
+          stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+      {locked ? 'Protegida' : 'Editable'}
     </button>
   );
 }
