@@ -87,7 +87,10 @@ export function Toolbar({ onAutoplan }: { onAutoplan: () => void }) {
           <span className="font-mono text-[12px] text-muted">{multi.length} {multi.length === 1 ? 'seleccionado' : 'seleccionados'}</span>
         )}
 
-        <div className="flex items-center rounded-lg border border-line bg-surface">
+        <div
+          className="flex items-center rounded-lg border border-line bg-surface"
+          title="Zoom de los bloques · Ctrl + rueda sobre la agenda"
+        >
           <button
             onClick={() => setZoom(zoomStep(slotPx, -1))}
             disabled={slotPx <= ZOOM_STEPS[0]}

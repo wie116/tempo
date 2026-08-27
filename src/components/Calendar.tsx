@@ -1,9 +1,9 @@
-import { useLayoutEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { isSameDay, parseISO } from 'date-fns';
 import { useClock, useDrag, useStore, useUI } from '../store';
 import {
   SLOT_MIN, clamp, dateKey, durationLabel, fmt, hhmm, hourLabel, isoFor,
-  labelEvery, minToPx, minorInterval, minutesOf, pxToMin, snap,
+  labelEvery, minToPx, minorInterval, minutesOf, pxToMin, snap, zoomStep,
 } from '../lib/time';
 import { DayColumn } from './DayColumn';
 import { insertionAroundTarget } from '../lib/planning';
@@ -35,6 +35,9 @@ export function Calendar({
 
   const colsRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const calendarRef = useRef<HTMLDivElement>(null);
+  const wheelDeltaRef = useRef(0);
+  const wheelDirectionRef = useRef<1 | -1 | null>(null);
 
   // La grilla siempre representa el día completo. La jornada configurada sólo
   // se usa para el resaltado visual y para los límites de Organizar.
@@ -55,6 +58,58 @@ export function Calendar({
     el.scrollTop = minToPx(clamp(nowMin - dayStartMin - 90, 0, totalMin), settings.slotPx);
     // solo al montar
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /*
+   * Ctrl + rueda reemplaza el zoom del navegador únicamente dentro de la
+   * agenda. Usamos un listener no pasivo porque Chrome sólo respeta
+   * preventDefault() en wheel cuando el listener puede cancelar el evento.
+   */
+  useEffect(() => {
+    const calendar = calendarRef.current;
+    if (!calendar) return;
+
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      if (event.deltaY === 0) return;
+
+      const direction: 1 | -1 = event.deltaY < 0 ? 1 : -1;
+      if (wheelDirectionRef.current !== direction) wheelDeltaRef.current = 0;
+      wheelDirectionRef.current = direction;
+
+      // Una rueda física suele emitir ~100 px por muesca; el trackpad reparte
+      // el mismo gesto entre varios eventos pequeños. Ambos avanzan un paso.
+      const normalizedDelta = Math.abs(event.deltaY) * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1);
+      wheelDeltaRef.current += normalizedDelta;
+      if (normalizedDelta < 40 && wheelDeltaRef.current < 40) return;
+      wheelDeltaRef.current = 0;
+
+      const scroller = scrollRef.current;
+      const state = useStore.getState();
+      const currentZoom = state.settings.slotPx;
+      const nextZoom = zoomStep(currentZoom, direction);
+      if (nextZoom === currentZoom) return;
+
+      // La hora bajo el puntero permanece en el mismo lugar de la pantalla.
+      let pointerY = 0;
+      let anchorMin = 0;
+      if (scroller) {
+        const rect = scroller.getBoundingClientRect();
+        pointerY = clamp(event.clientY - rect.top, 0, scroller.clientHeight);
+        anchorMin = pxToMin(scroller.scrollTop + pointerY, currentZoom);
+      }
+
+      state.setZoom(nextZoom);
+      if (scroller) {
+        requestAnimationFrame(() => {
+          scroller.scrollTop = minToPx(anchorMin, nextZoom) - pointerY;
+        });
+      }
+    };
+
+    calendar.addEventListener('wheel', onWheel, { passive: false });
+    return () => calendar.removeEventListener('wheel', onWheel);
   }, []);
 
   const pointToGrid = (clientX: number, clientY: number) => {
@@ -347,7 +402,7 @@ export function Calendar({
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+    <div ref={calendarRef} className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="flex shrink-0 border-b border-line">
         <div className="w-11 shrink-0 sm:w-14" />
         <div className="flex flex-1">
