@@ -9,5 +9,7 @@ dist-ssr
 !.vscode/extensions.json
 
 tsconfig.tsbuildinfo
+supabase/.temp/
+supabase/.branches/
 
 .env

@@ -1,13 +1,14 @@
 import { useMemo } from 'react';
 import { isSameMonth, isToday } from 'date-fns';
 import { useStore } from '../store';
-import { dateKey, fmt, hhmm, minutesOf, monthGrid } from '../lib/time';
+import { clockLabel, dateKey, fmt, minutesOf, monthGrid } from '../lib/time';
 
 export function MonthView({ anchor }: { anchor: Date }) {
   const mondayFirst = useStore((s) => s.settings.weekStartsOnMonday);
   const blocks = useStore((s) => s.blocks);
   const setCursor = useStore((s) => s.setCursor);
   const setView = useStore((s) => s.setView);
+  const language = useStore((s) => s.settings.language);
 
   const days = useMemo(() => monthGrid(anchor, mondayFirst), [anchor, mondayFirst]);
   const byDay = useMemo(() => {
@@ -20,9 +21,9 @@ export function MonthView({ anchor }: { anchor: Date }) {
     return m;
   }, [blocks]);
 
-  const headers = mondayFirst
-    ? ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
-    : ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+  const headers = language === 'en'
+    ? (mondayFirst ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'])
+    : (mondayFirst ? ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] : ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -73,13 +74,13 @@ export function MonthView({ anchor }: { anchor: Date }) {
                       style={{ background: b.kind === 'break' ? 'var(--muted)' : b.color }}
                     />
                     <span className="tabular shrink-0 font-mono text-[9px] text-muted">
-                      {hhmm(minutesOf(b.startsAt))}
+                      {clockLabel(minutesOf(b.startsAt))}
                     </span>
                     <span className="truncate">{b.title}</span>
                   </li>
                 ))}
                 {items.length > 3 && (
-                  <li className="pl-2.5 text-[9.5px] text-muted">+{items.length - 3} más</li>
+                  <li className="pl-2.5 text-[9.5px] text-muted">+{items.length - 3} {language === 'en' ? 'more' : 'más'}</li>
                 )}
               </ul>
             </button>

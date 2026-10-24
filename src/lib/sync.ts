@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import type { Block, List, Settings, Task } from '../types';
+import type { Block, List, RepeatMode, Settings, Task, TaskPriority } from '../types';
+import type { Database, Json } from './database.types';
 import { useStore } from '../store';
 import { supabase } from './supabase';
 import { fetchAllPages } from './pagination';
@@ -27,47 +28,71 @@ export const useSync = create<SyncState>((set) => ({
 
 /* ---------- Traducción entre el modelo local y las filas de Postgres ---------- */
 
-const listToRow = (l: List, userId: string) => ({
+type Tables = Database['public']['Tables'];
+type ListRow = Tables['lists']['Row'];
+type ListInsert = Tables['lists']['Insert'];
+type TaskRow = Tables['tasks']['Row'];
+type TaskInsert = Tables['tasks']['Insert'];
+type BlockRow = Tables['blocks']['Row'];
+type BlockInsert = Tables['blocks']['Insert'];
+type SyncRows = { lists: ListRow; tasks: TaskRow; blocks: BlockRow };
+
+const settingsJson = (settings: Settings) => settings as unknown as NonNullable<Json>;
+
+const repeatMode = (value: string | null): RepeatMode => (
+  value === 'daily' || value === 'weekly' || value === 'monthly' || value === 'yearly'
+    ? value
+    : 'none'
+);
+
+const taskPriority = (value: string | null): TaskPriority => (
+  value === 'low' || value === 'high' || value === 'urgent' ? value : 'normal'
+);
+
+const listToRow = (l: List, userId: string): ListInsert => ({
   id: l.id, user_id: userId, name: l.name, color: l.color,
   sort_order: l.order, collapsed: l.collapsed, scope: l.scope,
 });
-const rowToList = (r: any): List => ({
+const rowToList = (r: ListRow): List => ({
   id: r.id, name: r.name, color: r.color, order: r.sort_order ?? 0,
   collapsed: !!r.collapsed, scope: r.scope === 'routine' ? 'routine' : 'todo',
 });
 
-const taskToRow = (t: Task, userId: string) => ({
+const taskToRow = (t: Task, userId: string): TaskInsert => ({
   id: t.id, user_id: userId, list_id: t.listId, title: t.title,
   estimated_min: t.estimatedMin, color: t.color, is_recurring: t.recurring,
   repeat: t.repeat, repeat_until: t.repeatUntil, repeat_weekdays: t.repeatWeekdays,
   priority: t.priority, planned_date: t.plannedDate, due_date: t.dueDate, is_inbox: t.inbox,
   is_archived: t.archived, notes: t.notes ?? '', sort_order: t.order,
 });
-const rowToTask = (r: any): Task => ({
-  id: r.id, listId: r.list_id, title: r.title,
+const rowToTask = (r: TaskRow): Task => ({
+  id: r.id, listId: r.list_id ?? '', title: r.title,
   estimatedMin: r.estimated_min ?? null, color: r.color ?? null,
-  recurring: !!r.is_recurring, repeat: r.repeat ?? 'none', repeatUntil: r.repeat_until ?? null,
+  recurring: !!r.is_recurring, repeat: repeatMode(r.repeat), repeatUntil: r.repeat_until ?? null,
   repeatWeekdays: r.repeat_weekdays ?? null,
-  priority: r.priority ?? 'normal', plannedDate: r.planned_date ?? null,
+  priority: taskPriority(r.priority), plannedDate: r.planned_date ?? null,
   dueDate: r.due_date ?? null, inbox: !!r.is_inbox,
   archived: !!r.is_archived, notes: r.notes ?? '', order: r.sort_order ?? 0,
 });
 
-const blockToRow = (b: Block, userId: string) => ({
+const blockToRow = (b: Block, userId: string): BlockInsert => ({
   id: b.id, user_id: userId, task_id: b.taskId, title: b.title, color: b.color,
   starts_at: b.startsAt, duration_min: b.durationMin, kind: b.kind,
   status: b.status, closed_at: b.closedAt, pinned: b.pinned,
   series_id: b.seriesId, notes: b.notes ?? '', icon: b.icon ?? null,
   repeat: b.repeat ?? 'none', repeat_until: b.repeatUntil ?? null, repeat_weekdays: b.repeatWeekdays ?? null,
 });
-const rowToBlock = (r: any): Block => ({
+const rowToBlock = (r: BlockRow): Block => ({
   id: r.id, taskId: r.task_id ?? null, title: r.title, color: r.color,
-  startsAt: r.starts_at, durationMin: r.duration_min, kind: r.kind,
-  status: r.status, closedAt: r.closed_at ?? null, pinned: !!r.pinned,
+  startsAt: r.starts_at, durationMin: r.duration_min,
+  kind: r.kind === 'break' || r.kind === 'adhoc' ? r.kind : 'task',
+  status: r.status === 'done' || r.status === 'skipped' ? r.status : 'planned',
+  closedAt: r.closed_at ?? null, pinned: !!r.pinned,
   seriesId: r.series_id ?? null, notes: r.notes ?? '', icon: r.icon ?? null,
-  repeat: r.repeat ?? 'none', repeatUntil: r.repeat_until ?? null, repeatWeekdays: r.repeat_weekdays ?? null,
-  source: r.source ?? 'tempo',
-  external: r.external_ref ?? null, syncStatus: r.sync_status ?? 'local',
+  repeat: repeatMode(r.repeat), repeatUntil: r.repeat_until ?? null, repeatWeekdays: r.repeat_weekdays ?? null,
+  source: r.source === 'google-calendar' ? 'google-calendar' : 'tempo',
+  external: r.external_ref as Block['external'] ?? null,
+  syncStatus: r.sync_status === 'synced' || r.sync_status === 'pending' || r.sync_status === 'conflict' || r.sync_status === 'error' ? r.sync_status : 'local',
 });
 
 /* ---------- Instantánea para saber qué cambió ---------- */
@@ -117,7 +142,7 @@ let channel: RealtimeChannel | null = null;
 type SyncTable = 'lists' | 'tasks' | 'blocks';
 
 /** Descarga una tabla completa sin depender del máximo de filas de PostgREST. */
-async function fetchAllRows(table: SyncTable): Promise<any[]> {
+async function fetchAllRows<T extends SyncTable>(table: T): Promise<SyncRows[T][]> {
   const client = supabase;
   if (!client) return [];
   return fetchAllPages(async (from, to) => {
@@ -129,7 +154,7 @@ async function fetchAllRows(table: SyncTable): Promise<any[]> {
       .order('id', { ascending: true })
       .range(from, to);
     if (error) throw new Error(`${table}: ${error.message}`);
-    return data ?? [];
+    return (data ?? []) as unknown as SyncRows[T][];
   });
 }
 
@@ -156,7 +181,7 @@ export async function pullAll(): Promise<void> {
 
     applyingRemote = true;
     const current = useStore.getState();
-    const remoteSettings = (profile.data?.settings ?? {}) as Partial<Settings>;
+    const remoteSettings = (profile.data?.settings ?? {}) as unknown as Partial<Settings>;
     const settings = { ...current.settings, ...remoteSettings };
     useStore.setState({ lists, tasks, blocks, settings });
     applyingRemote = false;
@@ -209,7 +234,7 @@ async function uploadEverything(
     const { error } = await supabase.from('blocks').upsert(part.map((x) => blockToRow(x, userId!)));
     if (error) throw new Error(`Bloques: ${error.message}`);
   }
-  const { error } = await supabase.from('profiles').upsert({ id: userId, settings });
+  const { error } = await supabase.from('profiles').upsert({ id: userId, settings: settingsJson(settings) });
   if (error) throw new Error(`Ajustes: ${error.message}`);
 
   suppressPullUntil = Date.now() + 1200;
@@ -225,7 +250,8 @@ export async function forcePushAll(): Promise<void> {
     synced = snapshotOf(lists, tasks, blocks, settings);
     useSync.getState().set({ status: 'idle', lastSyncedAt: Date.now(), pendingChanges: false });
   } catch (e: any) {
-    useSync.getState().set({ status: 'error', lastError: e?.message ?? 'Error al subir' });
+    const language = useStore.getState().settings.language;
+    useSync.getState().set({ status: 'error', lastError: e?.message ?? (language === 'en' ? 'Upload error' : 'Error al subir') });
   }
 }
 
@@ -302,7 +328,7 @@ async function doPush(): Promise<void> {
       if (error) throw error;
     }
     if (settingsChanged) {
-      const { error } = await supabase.from('profiles').upsert({ id: userId, settings });
+      const { error } = await supabase.from('profiles').upsert({ id: userId, settings: settingsJson(settings) });
       if (error) throw error;
     }
 
@@ -312,7 +338,8 @@ async function doPush(): Promise<void> {
     suppressPullUntil = Date.now() + 1200;
     useSync.getState().set({ status: 'idle', lastError: null, lastSyncedAt: Date.now(), pendingChanges: false });
   } catch (e: any) {
-    useSync.getState().set({ status: 'error', lastError: e?.message ?? 'Error al sincronizar' });
+    const language = useStore.getState().settings.language;
+    useSync.getState().set({ status: 'error', lastError: e?.message ?? (language === 'en' ? 'Sync error' : 'Error al sincronizar') });
   }
 }
 
@@ -333,7 +360,8 @@ export async function startSync(uid: string): Promise<void> {
     if (!seeded) await pullAll();
     else useSync.getState().set({ status: 'idle', lastSyncedAt: Date.now(), pendingChanges: false });
   } catch (e: any) {
-    useSync.getState().set({ status: 'error', lastError: e?.message ?? 'No se pudo subir tu agenda' });
+    const language = useStore.getState().settings.language;
+    useSync.getState().set({ status: 'error', lastError: e?.message ?? (language === 'en' ? 'Could not upload your schedule' : 'No se pudo subir tu agenda') });
   }
 
   // Cada cambio local se agrupa 500 ms antes de viajar: escribir en un campo

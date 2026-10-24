@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import type { Database } from './database.types.ts';
 
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,14 +17,14 @@ export const env = (name: string): string => {
   return value;
 };
 
-export const serviceClient = () => createClient(env('SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), {
+export const serviceClient = () => createClient<Database>(env('SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
 export async function authenticatedUser(req: Request) {
   const authorization = req.headers.get('Authorization');
   if (!authorization) throw new Error('Sesión requerida');
-  const client = createClient(env('SUPABASE_URL'), env('SUPABASE_ANON_KEY'), {
+  const client = createClient<Database>(env('SUPABASE_URL'), env('SUPABASE_ANON_KEY'), {
     global: { headers: { Authorization: authorization } },
     auth: { persistSession: false, autoRefreshToken: false },
   });

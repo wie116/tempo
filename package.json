@@ -8,6 +8,15 @@
     "build": "tsc -b && vite build",
     "test": "node scripts/run-planning-tests.mjs",
     "check:edge": "node scripts/check-edge-functions.mjs",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset --local",
+    "db:types": "node scripts/generate-supabase-types.mjs",
+    "db:types:local": "node scripts/generate-supabase-types.mjs --local",
+    "db:types:check": "node scripts/generate-supabase-types.mjs --local --check",
+    "test:rls": "supabase test db --local",
+    "verify": "npm run build && npm test && npm run check:edge",
+    "verify:foundation": "npm run verify && npm run db:types:check && npm run test:rls",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -23,8 +32,9 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.4.0",
+    "supabase": "2.121.0",
     "tailwindcss": "^4.1.4",
     "typescript": "^5.8.3",
-    "vite": "^6.3.0"
+    "vite": "^6.4.4"
   }
 }

@@ -2,12 +2,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { isSameDay, parseISO } from 'date-fns';
 import { useClock, useDrag, useStore, useUI } from '../store';
 import {
-  SLOT_MIN, clamp, dateKey, durationLabel, fmt, hhmm, hourLabel, isoFor,
+  SLOT_MIN, clamp, clockLabel, dateKey, durationLabel, fmt, hourLabel, isoFor,
   labelEvery, minToPx, minorInterval, minutesOf, pxToMin, snap, zoomStep,
 } from '../lib/time';
 import { DayColumn } from './DayColumn';
 import { insertionAroundTarget } from '../lib/planning';
 import { startPointerGesture } from '../lib/gesture';
+import { pick } from '../lib/i18n';
 
 export function Calendar({
   days, onOpenBlock,
@@ -348,7 +349,7 @@ export function Calendar({
           clearSelection();
           useDrag.getState().begin({
             mode: tool === 'box' ? 'box' : 'range',
-            title: tool === 'box' ? '' : 'Bloque',
+            title: tool === 'box' ? '' : pick(settings.language, 'Bloque', 'Block'),
             color: 'var(--accent)', kind: 'adhoc',
             grabOffsetMin: 0, durationMin: tool === 'box' ? SLOT_MIN : settings.defaultBlockMin,
             dayIndex: p.dayIndex, startMin: start,
@@ -373,7 +374,7 @@ export function Calendar({
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     useDrag.getState().begin({
       mode: 'range',
-      title: 'Bloque',
+      title: pick(settings.language, 'Bloque', 'Block'),
       color: 'var(--accent)',
       kind: 'adhoc',
       grabOffsetMin: 0,
@@ -495,8 +496,8 @@ export function Calendar({
                 }}
               >
                 <span className="rounded-l bg-[var(--accent)] px-1 py-0.5 font-mono text-[9px] text-[var(--accent-fg)]">
-                  {hhmm(drag.startMin)}
-                  {drag.copy ? ' · copiar' : drag.groupIds && drag.groupIds.length > 1 ? ` · ${drag.groupIds.length} bloques` : drag.insertion ? ` · ${drag.insertion === 'before' ? 'antes' : 'después'}` : dropConflict ? ' · reacomoda' : ''}
+                  {clockLabel(drag.startMin)}
+                  {drag.copy ? ` · ${pick(settings.language, 'copiar', 'copy')}` : drag.groupIds && drag.groupIds.length > 1 ? ` · ${drag.groupIds.length} ${pick(settings.language, 'bloques', 'blocks')}` : drag.insertion ? ` · ${drag.insertion === 'before' ? pick(settings.language, 'antes', 'before') : pick(settings.language, 'después', 'after')}` : dropConflict ? ` · ${pick(settings.language, 'reacomoda', 'rearrange')}` : ''}
                 </span>
                 <span className="h-px flex-1 bg-[var(--accent)]" />
               </div>
@@ -548,7 +549,7 @@ export function Calendar({
                 }}
               >
                 <p className="tabular truncate font-mono text-[10px] text-muted">
-                  {hhmm(ghost.startMin)}–{hhmm(ghost.startMin + ghost.durationMin)} · {durationLabel(ghost.durationMin)}
+                  {clockLabel(ghost.startMin)}–{clockLabel(ghost.startMin + ghost.durationMin)} · {durationLabel(ghost.durationMin)}
                 </p>
               </div>
             )}
@@ -582,6 +583,7 @@ function RangeOverlay({
   const addAdhocBlock = useStore((s) => s.addAdhocBlock);
   const addBreak = useStore((s) => s.addBreak);
   const setRange = useUI((s) => s.setRange);
+  const language = useStore((s) => s.settings.language);
   const below = top < 90;
 
   return (
@@ -604,17 +606,17 @@ function RangeOverlay({
           className="rounded-lg px-2.5 py-1.5 text-[13px] font-semibold"
           style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
         >
-          Bloque
+          {pick(language, 'Bloque', 'Block')}
         </button>
         <button
           onClick={() => { addBreak(day, startMin, durationMin); setRange(null); }}
           className="rounded-lg border border-line px-2.5 py-1.5 text-[13px] font-medium text-muted hover:text-ink"
         >
-          Pausa
+          {pick(language, 'Pausa', 'Break')}
         </button>
         <button
           onClick={() => setRange(null)}
-          aria-label="Descartar selección"
+          aria-label={pick(language, 'Descartar selección', 'Discard selection')}
           className="rounded-lg px-2 py-1.5 text-[13px] text-muted hover:text-ink"
         >
           ×
@@ -636,6 +638,7 @@ function MultiBar() {
   const setPinned = useStore((s) => s.setPinned);
   const placeBlockGroup = useStore((s) => s.placeBlockGroup);
   const blocks = useStore((s) => s.blocks);
+  const language = useStore((s) => s.settings.language);
   if (!multi.length) return null;
 
   const allPinned = multi.every((id) => blocks[id]?.pinned);
@@ -645,8 +648,8 @@ function MultiBar() {
       className="flex shrink-0 flex-wrap items-center gap-2 border-t-2 px-3 py-2.5"
       style={{ borderTopColor: 'var(--accent)', background: 'color-mix(in oklab, var(--accent) 7%, var(--surface))' }}
     >
-      <span className="tabular font-mono text-[13px] font-semibold">{multi.length} bloques</span>
-      <span className="hidden text-[10.5px] text-muted lg:inline">Arrastrá para mover juntos · Ctrl+C / Ctrl+V</span>
+      <span className="tabular font-mono text-[13px] font-semibold">{multi.length} {pick(language, 'bloques', 'blocks')}</span>
+      <span className="hidden text-[10.5px] text-muted lg:inline">{pick(language, 'Arrastrá para mover juntos', 'Drag to move together')} · Ctrl+C / Ctrl+V</span>
       <span className="mx-0.5 h-5 w-px bg-[var(--border)]" />
       {[-30, -10, 10, 30].map((d) => (
         <button
@@ -661,13 +664,13 @@ function MultiBar() {
         onClick={() => setPinned(multi, !allPinned)}
         className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px] font-medium text-muted transition-colors hover:border-[var(--accent)] hover:text-ink"
       >
-        {allPinned ? 'Soltar' : 'Fijar'}
+        {allPinned ? pick(language, 'Soltar', 'Unpin') : pick(language, 'Fijar', 'Pin')}
       </button>
       <button
         onClick={() => multi.forEach((id) => setDone(id, true))}
         className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px] font-medium text-muted transition-colors hover:border-[var(--accent)] hover:text-ink"
       >
-        Completar
+        {pick(language, 'Completar', 'Complete')}
       </button>
       <button
         onClick={() => {
@@ -677,19 +680,19 @@ function MultiBar() {
         }}
         className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px] font-medium text-muted transition-colors hover:border-[var(--accent)] hover:text-ink"
       >
-        Duplicar
+        {pick(language, 'Duplicar', 'Duplicate')}
       </button>
       <button
         onClick={() => { removeBlocks(multi); clearSelection(); }}
         className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[13px] font-medium text-muted transition-colors hover:border-[var(--now)] hover:text-[var(--now)]"
       >
-        Eliminar
+        {pick(language, 'Eliminar', 'Delete')}
       </button>
       <button
         onClick={clearSelection}
         className="ml-auto rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-muted hover:text-ink"
       >
-        Listo
+        {pick(language, 'Listo', 'Done')}
       </button>
     </div>
   );

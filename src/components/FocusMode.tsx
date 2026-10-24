@@ -1,8 +1,9 @@
 import { useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useClock, useStore } from '../store';
-import { dateKey, hhmm, minutesOf } from '../lib/time';
+import { clockLabel, dateKey, minutesOf } from '../lib/time';
 import { EventIcon } from './EventIcon';
+import { pick } from '../lib/i18n';
 
 const pad = (value: number) => String(Math.floor(value)).padStart(2, '0');
 
@@ -19,6 +20,7 @@ export function FocusMode({
   const extendBlock = useStore((s) => s.extendBlock);
   const theme = useStore((s) => s.settings.theme);
   const fontFamily = useStore((s) => s.settings.fontFamily);
+  const language = useStore((s) => s.settings.language);
   const now = useClock((s) => s.now);
   const date = new Date(now);
   const nowMin = date.getHours() * 60 + date.getMinutes();
@@ -51,7 +53,7 @@ export function FocusMode({
   const floating = Boolean(portalWindow);
   const portalDocument = portalWindow?.document ?? document;
   return createPortal(<div className="fixed inset-0 z-[70] flex flex-col bg-bg text-ink">
-    <header className={`flex items-center justify-between border-b border-line ${floating ? 'px-4 py-2.5' : 'px-5 py-3'}`}><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Tempo</p><h2 className="text-[14px] font-semibold">{floating ? 'Concentración' : 'Modo Enfoque'}</h2></div><button onClick={onClose} className="rounded-lg border border-line px-3 py-2 text-[12px] text-muted hover:text-ink">Salir · Esc</button></header>
+    <header className={`flex items-center justify-between border-b border-line ${floating ? 'px-4 py-2.5' : 'px-5 py-3'}`}><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Tempo</p><h2 className="text-[14px] font-semibold">{floating ? pick(language, 'Concentración', 'Focus') : pick(language, 'Modo Enfoque', 'Focus mode')}</h2></div><button onClick={onClose} className="rounded-lg border border-line px-3 py-2 text-[12px] text-muted hover:text-ink">{pick(language, 'Salir', 'Exit')} · Esc</button></header>
     <main className={`mx-auto grid min-h-0 w-full max-w-5xl flex-1 place-items-center overflow-y-auto ${floating ? 'p-4' : 'p-6'}`}>
       <div className="w-full max-w-2xl text-center">
         <p className="font-mono text-[clamp(54px,12vw,112px)] font-bold leading-none tracking-[-0.08em]">
@@ -61,14 +63,14 @@ export function FocusMode({
           </span>
         </p>
         {current ? <>
-          <button onClick={() => onOpenBlock(current.id)} className="mt-8 max-w-full truncate text-[clamp(24px,5vw,44px)] font-semibold tracking-tight hover:underline">{current.icon && <EventIcon value={current.icon} size={30} className="mr-2 inline-block align-[-3px]" />}{current.kind === 'break' ? 'Pausa' : current.title}</button>
+          <button onClick={() => onOpenBlock(current.id)} className="mt-8 max-w-full truncate text-[clamp(24px,5vw,44px)] font-semibold tracking-tight hover:underline">{current.icon && <EventIcon value={current.icon} size={30} className="mr-2 inline-block align-[-3px]" />}{current.kind === 'break' ? pick(language, 'Pausa', 'Break') : current.title}</button>
           {current.notes && <p className="mx-auto mt-3 max-w-xl whitespace-pre-wrap text-[14px] leading-relaxed text-muted">{current.notes}</p>}
           <div className="mt-9 h-2 overflow-hidden rounded-full bg-surface-2"><div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${progress * 100}%`, background: current.color }} /></div>
-          <div className="mt-3 flex items-baseline justify-between gap-3"><span className="font-mono text-[12px] text-muted">{hhmm(minutesOf(current.startsAt))}</span><span className="font-mono text-[clamp(30px,6vw,54px)] font-bold" style={{ color: current.color }}>{pad(remaining / 60)}:{pad(remaining % 60)}</span><span className="font-mono text-[12px] text-muted">{hhmm(minutesOf(current.startsAt) + current.durationMin)}</span></div>
-          {current.kind !== 'break' && <div className="mt-9 flex flex-wrap justify-center gap-2"><button onClick={() => setStatus(current.id, 'done')} className="rounded-xl px-6 py-3 text-[14px] font-semibold" style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}>Completar</button><button onClick={() => extendBlock(current.id, 10)} className="rounded-xl border border-line px-5 py-3 text-[14px] font-medium">+10 minutos</button><button onClick={() => setStatus(current.id, 'skipped')} className="rounded-xl border border-line px-5 py-3 text-[14px] font-medium text-muted">Omitir</button></div>}
-        </> : <div className="mt-10"><p className="text-[24px] font-semibold">Un momento libre</p><p className="mt-2 text-[14px] text-muted">{next ? `${next.title} comienza a las ${hhmm(minutesOf(next.startsAt))}.` : 'No quedan más bloques hoy.'}</p></div>}
+          <div className="mt-3 flex items-baseline justify-between gap-3"><span className="font-mono text-[12px] text-muted">{clockLabel(minutesOf(current.startsAt))}</span><span className="font-mono text-[clamp(30px,6vw,54px)] font-bold" style={{ color: current.color }}>{pad(remaining / 60)}:{pad(remaining % 60)}</span><span className="font-mono text-[12px] text-muted">{clockLabel(minutesOf(current.startsAt) + current.durationMin)}</span></div>
+          {current.kind !== 'break' && <div className="mt-9 flex flex-wrap justify-center gap-2"><button onClick={() => setStatus(current.id, 'done')} className="rounded-xl px-6 py-3 text-[14px] font-semibold" style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}>{pick(language, 'Completar', 'Complete')}</button><button onClick={() => extendBlock(current.id, 10)} className="rounded-xl border border-line px-5 py-3 text-[14px] font-medium">+10 {pick(language, 'minutos', 'minutes')}</button><button onClick={() => setStatus(current.id, 'skipped')} className="rounded-xl border border-line px-5 py-3 text-[14px] font-medium text-muted">{pick(language, 'Omitir', 'Skip')}</button></div>}
+        </> : <div className="mt-10"><p className="text-[24px] font-semibold">{pick(language, 'Un momento libre', 'A free moment')}</p><p className="mt-2 text-[14px] text-muted">{next ? pick(language, `${next.title} comienza a las ${clockLabel(minutesOf(next.startsAt))}.`, `${next.title} starts at ${clockLabel(minutesOf(next.startsAt))}.`) : pick(language, 'No quedan más bloques hoy.', 'No more blocks today.')}</p></div>}
       </div>
     </main>
-    <footer className="border-t border-line px-5 py-3 text-center text-[11px] text-muted">{next ? `Después · ${next.title} · ${hhmm(minutesOf(next.startsAt))}` : 'Último bloque del día'}</footer>
+    <footer className="border-t border-line px-5 py-3 text-center text-[11px] text-muted">{next ? `${pick(language, 'Después', 'Next')} · ${next.title} · ${clockLabel(minutesOf(next.startsAt))}` : pick(language, 'Último bloque del día', 'Last block of the day')}</footer>
   </div>, portalDocument.body);
 }

@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { clamp, hhmm } from '../lib/time';
+import { useStore } from '../store';
+import { pick } from '../lib/i18n';
 
 interface Props {
   open: boolean;
   onClose: () => void;
   title: string;
   subtitle?: string;
+  /** Etiqueta accesible opcional para idiomas que se previsualizan antes de guardar. */
+  closeLabel?: string;
   /** Ancho máximo del panel. */
   size?: 'sm' | 'md' | 'lg';
   footer?: React.ReactNode;
@@ -15,7 +19,8 @@ interface Props {
 
 const WIDTHS = { sm: 'max-w-md', md: 'max-w-2xl', lg: 'max-w-4xl' };
 
-export function Modal({ open, onClose, title, subtitle, size = 'md', footer, children }: Props) {
+export function Modal({ open, onClose, title, subtitle, closeLabel, size = 'md', footer, children }: Props) {
+  const language = useStore((s) => s.settings.language);
   const panelRef = useRef<HTMLDivElement>(null);
   // onClose suele venir como flecha inline, o sea una función nueva en cada render.
   // Si la ponemos como dependencia, el efecto corre en cada tecla y el focus()
@@ -87,7 +92,7 @@ export function Modal({ open, onClose, title, subtitle, size = 'md', footer, chi
           </div>
           <button
             onClick={onClose}
-            aria-label="Cerrar"
+            aria-label={closeLabel ?? pick(language, 'Cerrar', 'Close')}
             className="-mr-1 shrink-0 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-ink"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -349,7 +354,7 @@ export function Segmented<T extends string>({
  * que rompe el estilo y aparece pegado al borde de la ventana.
  */
 export function ConfirmModal({
-  open, onClose, onConfirm, title, message, detail, confirmLabel = 'Eliminar', danger = true,
+  open, onClose, onConfirm, title, message, detail, confirmLabel, danger = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -360,6 +365,7 @@ export function ConfirmModal({
   confirmLabel?: string;
   danger?: boolean;
 }) {
+  const language = useStore((s) => s.settings.language);
   return (
     <Modal
       open={open}
@@ -368,7 +374,7 @@ export function ConfirmModal({
       size="sm"
       footer={
         <>
-          <Btn onClick={onClose}>Cancelar</Btn>
+          <Btn onClick={onClose}>{pick(language, 'Cancelar', 'Cancel')}</Btn>
           <button
             onClick={() => { onConfirm(); onClose(); }}
             data-modal-confirm
@@ -379,7 +385,7 @@ export function ConfirmModal({
                 : { background: 'var(--accent)', color: 'var(--accent-fg)' }
             }
           >
-            {confirmLabel}
+            {confirmLabel ?? pick(language, 'Eliminar', 'Delete')}
           </button>
         </>
       }

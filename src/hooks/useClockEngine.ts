@@ -39,7 +39,7 @@ export function useClockEngine() {
 
       if (settings.dailyReviewEnabled && nowMin === settings.dailyReviewHour * 60) {
         const unresolved = Object.values(blocks).filter((block) => block.startsAt.slice(0, 10) === key && block.kind !== 'break' && block.status !== 'done').length;
-        systemNotice('daily-review', 'Momento de cerrar el día', unresolved ? `${unresolved} tareas necesitan una decisión.` : 'Tu agenda está al día.');
+        systemNotice('daily-review', settings.language === 'en' ? 'Time to close the day' : 'Momento de cerrar el día', unresolved ? (settings.language === 'en' ? `${unresolved} tasks need a decision.` : `${unresolved} tareas necesitan una decisión.`) : (settings.language === 'en' ? 'Your schedule is up to date.' : 'Tu agenda está al día.'));
       }
 
       for (const b of Object.values(blocks)) {
@@ -49,14 +49,14 @@ export function useClockEngine() {
 
         const noticeAt = start - settings.notificationLeadMin;
         if (noticeAt > prev && noticeAt <= nowMin) {
-          systemNotice(`start-${b.id}`, settings.notificationLeadMin ? `${b.title} empieza pronto` : `Empieza: ${b.title}`, settings.notificationLeadMin ? `En ${settings.notificationLeadMin} minutos · ${b.startsAt.slice(11, 16)}` : `Hasta las ${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`);
+          systemNotice(`start-${b.id}`, settings.notificationLeadMin ? (settings.language === 'en' ? `${b.title} starts soon` : `${b.title} empieza pronto`) : (settings.language === 'en' ? `Starts: ${b.title}` : `Empieza: ${b.title}`), settings.notificationLeadMin ? (settings.language === 'en' ? `In ${settings.notificationLeadMin} minutes · ${b.startsAt.slice(11, 16)}` : `En ${settings.notificationLeadMin} minutos · ${b.startsAt.slice(11, 16)}`) : (settings.language === 'en' ? `Until ${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}` : `Hasta las ${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`));
         }
 
         if (settings.startChime && start > prev && start <= nowMin) {
           if (settings.soundEnabled) playChime(b.kind === 'break' ? settings.breakChime : settings.chime, settings.volume * 0.7, 1);
           useToasts.getState().push({
             kind: 'info',
-            title: b.kind === 'break' ? 'Empieza la pausa' : `Empieza: ${b.title}`,
+            title: b.kind === 'break' ? (settings.language === 'en' ? 'Break starts' : 'Empieza la pausa') : (settings.language === 'en' ? `Starts: ${b.title}` : `Empieza: ${b.title}`),
             blockId: b.id,
             ttl: 8000,
           });
@@ -69,8 +69,8 @@ export function useClockEngine() {
           if (settings.closePrompt && b.status === 'planned' && b.kind !== 'break') {
             useToasts.getState().push({
               kind: 'close-prompt',
-              title: `Terminó: ${b.title}`,
-              body: '¿Lo cerrás o necesitaste más tiempo?',
+              title: settings.language === 'en' ? `Ended: ${b.title}` : `Terminó: ${b.title}`,
+              body: settings.language === 'en' ? 'Close it, or did you need more time?' : '¿Lo cerrás o necesitaste más tiempo?',
               blockId: b.id,
               ttl: 0,
             });

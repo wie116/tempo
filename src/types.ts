@@ -92,6 +92,10 @@ export type PlanOrder = 'random' | 'list' | 'longest' | 'shortest';
 
 export type PlanSource = 'pending' | 'today';
 
+export type AppLanguage = 'es' | 'en';
+export type RegionalLocale = 'es-AR' | 'es-ES' | 'en-US' | 'en-GB';
+export type TimeFormat = '24h' | '12h';
+
 export interface AutoplanConfig {
   /** 'pending' agenda tareas nuevas; 'today' reordena lo que ya está en el día. */
   source: PlanSource;
@@ -112,6 +116,13 @@ export interface AutoplanConfig {
 }
 
 export interface Settings {
+  /** Idioma de la interfaz. Preparado para ampliar el catálogo sin mezclarlo con la región. */
+  language: AppLanguage;
+  /** Formato de fechas y números; es independiente del idioma de la interfaz. */
+  locale: RegionalLocale;
+  /** Zona IANA usada para presentar referencias horarias y futuras integraciones. */
+  timeZone: string;
+  timeFormat: TimeFormat;
   theme: string;
   fontFamily: 'modern' | 'editorial' | 'rounded';
   dayStartHour: number;

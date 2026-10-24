@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useStore, useToasts } from '../store';
 import { NumField } from './Modal';
+import { pick } from '../lib/i18n';
 
 export function Toasts() {
   const toasts = useToasts((s) => s.toasts);
@@ -22,6 +23,7 @@ function ToastCard({ id }: { id: string }) {
   const extendBlock = useStore((s) => s.extendBlock);
   const [extending, setExtending] = useState(false);
   const [extra, setExtra] = useState<number | null>(20);
+  const language = useStore((s) => s.settings.language);
 
   if (!toast) return null;
   const isPrompt = toast.kind === 'close-prompt';
@@ -43,7 +45,7 @@ function ToastCard({ id }: { id: string }) {
         </div>
         <button
           onClick={() => dismiss(toast.id)}
-          aria-label="Descartar"
+          aria-label={pick(language, 'Descartar', 'Dismiss')}
           className="-mr-0.5 -mt-0.5 shrink-0 rounded p-1 text-muted hover:text-ink"
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -58,14 +60,14 @@ function ToastCard({ id }: { id: string }) {
             onClick={() => { toast.onUndo!(); dismiss(toast.id); }}
             className="flex-1 rounded-lg border border-line py-1.5 text-[12px] font-medium text-muted hover:text-ink"
           >
-            Deshacer
+            {pick(language, 'Deshacer', 'Undo')}
           </button>
           <button
             onClick={() => dismiss(toast.id)}
             className="flex-1 rounded-lg px-2 py-1.5 text-[12px] font-semibold"
             style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
           >
-            Aceptar
+            {pick(language, 'Aceptar', 'Accept')}
           </button>
         </div>
       )}
@@ -74,13 +76,13 @@ function ToastCard({ id }: { id: string }) {
         <div className="mt-2.5">
           {extending ? (
             <div className="flex items-center gap-2">
-              <NumField value={extra} onCommit={setExtra} min={10} step={10} suffix="min más" />
+              <NumField value={extra} onCommit={setExtra} min={10} step={10} suffix={pick(language, 'min más', 'more min')} />
               <button
                 onClick={() => { extendBlock(toast.blockId!, extra ?? 20); dismiss(toast.id); }}
                 className="ml-auto rounded-lg px-2.5 py-1.5 text-[12px] font-semibold"
                 style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
               >
-                Agendar
+                {pick(language, 'Agendar', 'Schedule')}
               </button>
             </div>
           ) : (
@@ -90,20 +92,20 @@ function ToastCard({ id }: { id: string }) {
                 className="flex-1 rounded-lg px-2 py-1.5 text-[12px] font-semibold"
                 style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
               >
-                Completado
+                {pick(language, 'Completado', 'Completed')}
               </button>
               <button
                 onClick={() => setExtending(true)}
                 className="rounded-lg border border-line px-2 py-1.5 text-[12px] text-muted hover:text-ink"
               >
-                Más tiempo
+                {pick(language, 'Más tiempo', 'More time')}
               </button>
               <button
                 onClick={() => { setStatus(toast.blockId!, 'skipped'); dismiss(toast.id); }}
-                title="Queda como omitido y la tarea vuelve a pendientes"
+                title={pick(language, 'Queda como omitido y la tarea vuelve a pendientes', 'Marks it skipped and returns the task to pending')}
                 className="rounded-lg border border-line px-2 py-1.5 text-[12px] text-muted hover:text-ink"
               >
-                No lo hice
+                {pick(language, 'No lo hice', 'Not done')}
               </button>
             </div>
           )}

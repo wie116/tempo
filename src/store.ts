@@ -9,11 +9,16 @@ import { expandSeries } from './lib/repeat';
 import type { PlanItem } from './lib/autoplan';
 import { applyBlockPatches, isReadOnlyBlock, normalizeBlock, packDay } from './lib/planning';
 import { findAvailableStart } from './lib/conflicts';
+import { cleanPastUnclosed, restorePastCleanup, type PastCleanupSnapshot } from './lib/overdue';
 
 /** Grupo donde caen los bloques creados a mano, sin tarea previa. */
 export const UNSORTED_NAME = 'Sin clasificar';
 
-const DEFAULT_SETTINGS: Settings = {
+export const DEFAULT_SETTINGS: Settings = {
+  language: 'es',
+  locale: 'es-AR',
+  timeZone: 'America/Argentina/Buenos_Aires',
+  timeFormat: '24h',
   theme: 'daylight',
   fontFamily: 'modern',
   dayStartHour: 7,
@@ -103,6 +108,10 @@ interface State {
   setDone: (id: string, done: boolean) => void;
   /** Pendiente, completado u omitido. */
   setStatus: (id: string, status: BlockStatus) => void;
+  /** Marca como no realizados todos los bloques pendientes anteriores a hoy. */
+  cleanPastUnclosed: (todayKey: string) => PastCleanupSnapshot | null;
+  /** Revierte exactamente una limpieza masiva previa. */
+  restorePastCleanup: (snapshot: PastCleanupSnapshot) => void;
   toggleDone: (id: string) => void;
   setPinned: (ids: string[], pinned: boolean) => void;
   duplicateBlock: (id: string) => string | null;
@@ -313,18 +322,19 @@ export const useStore = create<State>()(
 
       addBreak: (day, startMin, durationMin) =>
         get().addBlock({
-          taskId: null, title: 'Pausa', color: 'var(--muted)',
+          taskId: null, title: get().settings.language === 'en' ? 'Break' : 'Pausa', color: 'var(--muted)',
           startsAt: isoFor(day, startMin), durationMin,
           kind: 'break', status: 'planned', closedAt: null, pinned: false, seriesId: null, notes: '',
         }),
 
-      addAdhocBlock: (day, startMin, durationMin, title = 'Bloque') => {
+      addAdhocBlock: (day, startMin, durationMin, title) => {
         const s = get();
+        const resolvedTitle = title ?? (s.settings.language === 'en' ? 'Block' : 'Bloque');
         const listId = s.ensureUnsortedList();
         const color = get().lists.find((l) => l.id === listId)?.color ?? PALETTE[7];
-        const taskId = get().addTask(listId, title, { estimatedMin: durationMin });
+        const taskId = get().addTask(listId, resolvedTitle, { estimatedMin: durationMin });
         return get().addBlock({
-          taskId, title, color,
+          taskId, title: resolvedTitle, color,
           startsAt: isoFor(day, startMin), durationMin,
           kind: 'adhoc', status: 'planned', closedAt: null, pinned: false, seriesId: null, notes: '',
         });
@@ -615,6 +625,19 @@ export const useStore = create<State>()(
               : s.tasks,
           };
         }),
+
+      cleanPastUnclosed: (todayKey) => {
+        let snapshot: PastCleanupSnapshot | null = null;
+        set((s) => {
+          const result = cleanPastUnclosed(s.blocks, s.tasks, todayKey, Date.now());
+          snapshot = result.snapshot;
+          return result.snapshot ? { blocks: result.blocks, tasks: result.tasks } : s;
+        });
+        return snapshot;
+      },
+
+      restorePastCleanup: (snapshot) =>
+        set((s) => restorePastCleanup(s.blocks, s.tasks, snapshot)),
 
       toggleDone: (id) => {
         const b = get().blocks[id];

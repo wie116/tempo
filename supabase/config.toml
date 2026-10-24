@@ -1,3 +1,5 @@
+project_id = "tempo"
+
 [functions.google-calendar-callback]
 verify_jwt = false
 

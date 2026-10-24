@@ -18,9 +18,11 @@ import { Calendar } from './components/Calendar';
 import { TimerBar } from './components/TimerBar';
 import { Toasts } from './components/Toasts';
 import { MobileNav } from './components/MobileNav';
+import { dateFnsLocale, translate } from './lib/i18n';
+import { configureDateFormatting } from './lib/time';
 
 const MonthView = lazy(() => import('./components/MonthView').then((m) => ({ default: m.MonthView })));
-const SettingsModal = lazy(() => import('./components/SettingsModal').then((m) => ({ default: m.SettingsModal })));
+const SettingsModal = lazy(() => import('./components/SettingsPanel').then((m) => ({ default: m.SettingsModal })));
 const TasksModal = lazy(() => import('./components/TasksModal').then((m) => ({ default: m.TasksModal })));
 const TaskEditModal = lazy(() => import('./components/TasksModal').then((m) => ({ default: m.TaskEditModal })));
 const BlockModal = lazy(() => import('./components/BlockModal').then((m) => ({ default: m.BlockModal })));
@@ -55,6 +57,10 @@ export default function App() {
   const theme = useStore((s) => s.settings.theme);
   const fontFamily = useStore((s) => s.settings.fontFamily);
   const mondayFirst = useStore((s) => s.settings.weekStartsOnMonday);
+  const language = useStore((s) => s.settings.language);
+  const locale = useStore((s) => s.settings.locale);
+  const timeFormat = useStore((s) => s.settings.timeFormat);
+  configureDateFormatting(dateFnsLocale(locale), language, timeFormat);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -91,15 +97,15 @@ export default function App() {
     setActivityOpen(false);
     if (!supportsDocumentPictureInPicture()) {
       useToasts.getState().push({
-        title: 'Ventana flotante no disponible',
-        body: 'Abrimos el modo Enfoque normal. Probá con Chrome o Edge actualizado.',
+        title: language === 'en' ? 'Floating window unavailable' : 'Ventana flotante no disponible',
+        body: language === 'en' ? 'We opened the regular Focus mode. Try an updated Chrome or Edge.' : 'Abrimos el modo Enfoque normal. Probá con Chrome o Edge actualizado.',
         kind: 'info', ttl: 3200,
       });
       openRegularFocus();
       return;
     }
     try {
-      const floating = await openFocusPictureInPicture();
+      const floating = await openFocusPictureInPicture(language === 'en' ? 'Tempo · Focus' : 'Tempo · Concentración');
       if (!floating) {
         openRegularFocus();
         return;
@@ -115,8 +121,8 @@ export default function App() {
       }, { once: true });
     } catch (error: any) {
       useToasts.getState().push({
-        title: 'No se pudo abrir la ventana flotante',
-        body: error?.message ?? 'El navegador rechazó la solicitud.',
+        title: language === 'en' ? 'Could not open floating window' : 'No se pudo abrir la ventana flotante',
+        body: error?.message ?? (language === 'en' ? 'The browser rejected the request.' : 'El navegador rechazó la solicitud.'),
         kind: 'info', ttl: 3200,
       });
       openRegularFocus();
@@ -161,6 +167,9 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.font = fontFamily;
   }, [fontFamily]);
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
 
   /* iOS y Chrome bloquean el audio hasta el primer gesto */
   useEffect(() => {
@@ -214,7 +223,8 @@ export default function App() {
         if (!ids.length) return;
         e.preventDefault();
         ui.setClipboard(ids);
-        useToasts.getState().push({ title: `${ids.length} ${ids.length === 1 ? 'bloque copiado' : 'bloques copiados'}`, body: 'Pegá con Ctrl+V o Cmd+V.', kind: 'info', ttl: 1800 });
+        const activeLanguage = useStore.getState().settings.language;
+        useToasts.getState().push({ title: `${ids.length} ${ids.length === 1 ? (activeLanguage === 'en' ? 'block copied' : 'bloque copiado') : (activeLanguage === 'en' ? 'blocks copied' : 'bloques copiados')}`, body: activeLanguage === 'en' ? 'Paste with Ctrl+V or Cmd+V.' : 'Pegá con Ctrl+V o Cmd+V.', kind: 'info', ttl: 1800 });
         return;
       }
       if ((e.ctrlKey || e.metaKey) && !typingNow(e.target) && e.key.toLowerCase() === 'v') {
@@ -232,7 +242,8 @@ export default function App() {
         const pasted = state.placeBlockGroup(ids, anchor.id, targetDay, targetStart, true);
         ui.setMulti(pasted);
         ui.focusBlock(pasted[0] ?? null);
-        useToasts.getState().push({ title: `${pasted.length} ${pasted.length === 1 ? 'bloque pegado' : 'bloques pegados'}`, kind: 'info', ttl: 1500 });
+        const activeLanguage = useStore.getState().settings.language;
+        useToasts.getState().push({ title: `${pasted.length} ${pasted.length === 1 ? (activeLanguage === 'en' ? 'block pasted' : 'bloque pegado') : (activeLanguage === 'en' ? 'blocks pasted' : 'bloques pegados')}`, kind: 'info', ttl: 1500 });
         return;
       }
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
@@ -253,7 +264,7 @@ export default function App() {
   if (!ready) {
     return (
       <div className="grid h-full place-items-center bg-bg text-[13px] text-muted">
-        Abriendo tu agenda…
+        {translate(language, 'openingAgenda')}
       </div>
     );
   }
@@ -292,7 +303,7 @@ export default function App() {
         <main className="min-w-0 flex-1 overflow-hidden p-2 sm:p-3">
           <div className={`card mx-auto flex h-full min-h-0 w-full flex-col overflow-hidden ${WIDTH[view]}`}>
             {view === 'month' ? (
-              <Suspense fallback={<div className="grid h-full place-items-center text-[12px] text-muted">Abriendo mes…</div>}>
+              <Suspense fallback={<div className="grid h-full place-items-center text-[12px] text-muted">{language === 'en' ? 'Opening month…' : 'Abriendo mes…'}</div>}>
                 <MonthView anchor={anchor} />
               </Suspense>
             ) : (

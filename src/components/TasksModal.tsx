@@ -4,6 +4,7 @@ import { PALETTE } from '../lib/themes';
 import { durationLabel } from '../lib/time';
 import { Btn, ColorPicker, ConfirmModal, Field, Modal, NumField, Segmented, Tabs, inputCls } from './Modal';
 import type { Task } from '../types';
+import { pick } from '../lib/i18n';
 
 export function TasksModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const lists = useStore((s) => s.lists);
@@ -11,6 +12,7 @@ export function TasksModal({ open, onClose }: { open: boolean; onClose: () => vo
   const addList = useStore((s) => s.addList);
   const addTask = useStore((s) => s.addTask);
   const unsortedListId = useStore((s) => s.unsortedListId);
+  const language = useStore((s) => s.settings.language);
   const [activeList, setActiveList] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<string | null>(null);
   const [editingList, setEditingList] = useState<string | null>(null);
@@ -40,8 +42,8 @@ export function TasksModal({ open, onClose }: { open: boolean; onClose: () => vo
       <Modal
         open={open}
         onClose={onClose}
-        title="Tareas y rutinas"
-        subtitle="Separá pendientes únicos de hábitos y actividades repetitivas."
+        title={pick(language, 'Tareas y rutinas', 'Tasks and routines')}
+        subtitle={pick(language, 'Separá pendientes únicos de hábitos y actividades repetitivas.', 'Keep one-time tasks separate from habits and recurring activities.')}
         size="lg"
       >
         <Tabs
@@ -49,14 +51,14 @@ export function TasksModal({ open, onClose }: { open: boolean; onClose: () => vo
           onChange={setSection}
           tabs={[
             { id: 'todo' as const, label: 'To-Do' },
-            { id: 'routine' as const, label: 'Rutinas' },
-            { id: 'archive' as const, label: `Archivo (${tasks.filter((t) => t.archived).length})` },
+            { id: 'routine' as const, label: pick(language, 'Rutinas', 'Routines') },
+            { id: 'archive' as const, label: `${pick(language, 'Archivo', 'Archive')} (${tasks.filter((t) => t.archived).length})` },
           ]}
         />
         <div className="flex min-h-[26rem] flex-col sm:flex-row">
           {/* Clasificaciones */}
           <nav className="shrink-0 border-b border-line p-3 sm:w-52 sm:border-b-0 sm:border-r">
-            <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Clasificaciones</p>
+            <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">{pick(language, 'Clasificaciones', 'Classifications')}</p>
             <ul className="flex gap-1.5 overflow-x-auto sm:block sm:space-y-0.5 sm:overflow-visible">
               {sortedLists.map((l) => {
                 const n = tasks.filter((t) => t.listId === l.id)
@@ -81,16 +83,16 @@ export function TasksModal({ open, onClose }: { open: boolean; onClose: () => vo
             <div className="mt-2 grid grid-cols-2 gap-1.5">
               <button
                 className="col-span-2 w-full rounded-lg border border-line px-2 py-1.5 text-[12px] text-muted transition-colors hover:border-[var(--accent)] hover:text-ink"
-                onClick={() => { const id = addList('Nueva clasificación', section === 'routine' ? 'routine' : 'todo'); setActiveList(id); setEditingList(id); }}
+                onClick={() => { const id = addList(pick(language, 'Nueva clasificación', 'New classification'), section === 'routine' ? 'routine' : 'todo'); setActiveList(id); setEditingList(id); }}
               >
-                + Clasificación
+                + {pick(language, 'Clasificación', 'Classification')}
               </button>
-              {currentList && <button className="rounded-lg border border-line px-2 py-1.5 text-[12px] text-muted hover:text-ink" onClick={() => setEditingList(currentList.id)}>Editar</button>}
+              {currentList && <button className="rounded-lg border border-line px-2 py-1.5 text-[12px] text-muted hover:text-ink" onClick={() => setEditingList(currentList.id)}>{pick(language, 'Editar', 'Edit')}</button>}
               {currentList && sortedLists.length > 1 && currentList.id !== unsortedListId && currentList.name !== UNSORTED_NAME && (
                 <button
                   onClick={() => setConfirm({ kind: 'list', id: currentList.id })}
-                  aria-label="Eliminar clasificación"
-                  title="Eliminar clasificación"
+                  aria-label={pick(language, 'Eliminar clasificación', 'Delete classification')}
+                  title={pick(language, 'Eliminar clasificación', 'Delete classification')}
                   className="grid min-w-0 place-items-center rounded-lg border border-line px-2 py-1.5 text-muted transition-colors hover:border-[var(--now)] hover:text-[var(--now)]"
                 >
                   <TrashIcon />
@@ -102,25 +104,25 @@ export function TasksModal({ open, onClose }: { open: boolean; onClose: () => vo
           {/* Tareas de la clasificación */}
           <div className="min-w-0 flex-1 p-3">
             <div className="mb-2 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por nombre o notas…" className={inputCls} />
-              <select value={priority} onChange={(e) => setPriority(e.target.value)} className={inputCls} aria-label="Filtrar prioridad">
-                <option value="all">Toda prioridad</option><option value="urgent">Urgente</option><option value="high">Alta</option><option value="normal">Normal</option><option value="low">Baja</option>
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={pick(language, 'Buscar por nombre o notas…', 'Search by name or notes…')} className={inputCls} />
+              <select value={priority} onChange={(e) => setPriority(e.target.value)} className={inputCls} aria-label={pick(language, 'Filtrar prioridad', 'Filter priority')}>
+                <option value="all">{pick(language, 'Toda prioridad', 'Any priority')}</option><option value="urgent">{pick(language, 'Urgente', 'Urgent')}</option><option value="high">{pick(language, 'Alta', 'High')}</option><option value="normal">{pick(language, 'Normal', 'Normal')}</option><option value="low">{pick(language, 'Baja', 'Low')}</option>
               </select>
-              <select value={duration} onChange={(e) => setDuration(e.target.value)} className={inputCls} aria-label="Filtrar duración">
-                <option value="all">Toda duración</option><option value="short">Hasta 30 min</option><option value="medium">Hasta 1 h</option><option value="long">Más de 1 h</option>
+              <select value={duration} onChange={(e) => setDuration(e.target.value)} className={inputCls} aria-label={pick(language, 'Filtrar duración', 'Filter duration')}>
+                <option value="all">{pick(language, 'Toda duración', 'Any duration')}</option><option value="short">{pick(language, 'Hasta 30 min', 'Up to 30 min')}</option><option value="medium">{pick(language, 'Hasta 1 h', 'Up to 1 hr')}</option><option value="long">{pick(language, 'Más de 1 h', 'More than 1 hr')}</option>
               </select>
             </div>
             {section !== 'archive' && <div className="mb-2 flex justify-end">
               <Btn variant="primary" onClick={() => {
                 if (!current) return;
-                const id = addTask(current, section === 'routine' ? 'Nueva rutina' : 'Nueva tarea', { recurring: section === 'routine' });
+                const id = addTask(current, section === 'routine' ? pick(language, 'Nueva rutina', 'New routine') : pick(language, 'Nueva tarea', 'New task'), { recurring: section === 'routine' });
                 setEditingTask(id);
-              }}>Agregar</Btn>
+              }}>{pick(language, 'Agregar', 'Add')}</Btn>
             </div>}
 
             {items.length === 0 ? (
               <p className="px-1 py-8 text-center text-[12.5px] text-muted">
-                {section === 'archive' ? 'No hay elementos archivados en esta clasificación.' : `Esta clasificación todavía no tiene ${section === 'todo' ? 'tareas' : 'rutinas'}.`}
+                {section === 'archive' ? pick(language, 'No hay elementos archivados en esta clasificación.', 'There are no archived items in this classification.') : pick(language, `Esta clasificación todavía no tiene ${section === 'todo' ? 'tareas' : 'rutinas'}.`, `This classification does not have any ${section === 'todo' ? 'tasks' : 'routines'} yet.`)}
               </p>
             ) : (
               <ul className="space-y-1">
@@ -140,10 +142,10 @@ export function TasksModal({ open, onClose }: { open: boolean; onClose: () => vo
 
             <p className="mt-3 px-1 text-[11px] leading-snug text-muted">
               {section === 'todo'
-                ? 'Cada To-Do sigue disponible hasta que lo completes. Al completar su bloque pasa al Archivo; si queda pendiente, no se pierde.'
+                ? pick(language, 'Cada To-Do sigue disponible hasta que lo completes. Al completar su bloque pasa al Archivo; si queda pendiente, no se pierde.', 'Each To-Do stays available until you complete it. Completing its block moves it to Archive; pending work is never lost.')
                 : section === 'routine'
-                  ? 'Las rutinas permanecen disponibles. La frecuencia se define en cada bloque de la agenda.'
-                  : 'Restaurá un elemento si necesitás volver a usarlo.'}
+                  ? pick(language, 'Las rutinas permanecen disponibles. La frecuencia se define en cada bloque de la agenda.', 'Routines remain available. Their frequency is defined on each schedule block.')
+                  : pick(language, 'Restaurá un elemento si necesitás volver a usarlo.', 'Restore an item when you need to use it again.')}
             </p>
           </div>
         </div>
@@ -180,6 +182,7 @@ function TaskRow({
   task, groupColor, onEdit, onDelete, archived,
 }: { task: Task; groupColor: string; onEdit: () => void; onDelete: () => void; archived: boolean }) {
   const updateTask = useStore((s) => s.updateTask);
+  const language = useStore((s) => s.settings.language);
   const color = task.color ?? groupColor;
   return (
     <div className="group flex items-center gap-2.5 rounded-lg border border-line px-2.5 py-2 transition-colors hover:bg-surface-2">
@@ -188,23 +191,23 @@ function TaskRow({
         {task.title}
       </button>
       <span className="tabular shrink-0 font-mono text-[10.5px] text-muted">
-        {task.estimatedMin ? durationLabel(task.estimatedMin) : 'libre'}
+        {task.estimatedMin ? durationLabel(task.estimatedMin) : pick(language, 'libre', 'flexible')}
       </span>
       <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] text-muted">
-        {task.recurring ? 'Rutina' : task.priority === 'urgent' ? 'Urgente' : task.priority === 'high' ? 'Alta' : 'To-Do'}
+        {task.recurring ? pick(language, 'Rutina', 'Routine') : task.priority === 'urgent' ? pick(language, 'Urgente', 'Urgent') : task.priority === 'high' ? pick(language, 'Alta', 'High') : 'To-Do'}
       </span>
       {!task.recurring && (task.plannedDate || task.dueDate) && <span className="hidden rounded-md bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-muted sm:inline">
-        {task.dueDate ? `vence ${task.dueDate.slice(8, 10)}/${task.dueDate.slice(5, 7)}` : task.plannedDate?.slice(5).split('-').reverse().join('/')}
+        {task.dueDate ? `${pick(language, 'vence', 'due')} ${task.dueDate.slice(8, 10)}/${task.dueDate.slice(5, 7)}` : task.plannedDate?.slice(5).split('-').reverse().join('/')}
       </span>}
       {archived && <button onClick={() => updateTask(task.id, { archived: false })}
-        className="shrink-0 rounded px-1.5 py-1 text-[12px] font-medium text-muted hover:text-ink">Restaurar</button>}
+        className="shrink-0 rounded px-1.5 py-1 text-[12px] font-medium text-muted hover:text-ink">{pick(language, 'Restaurar', 'Restore')}</button>}
       <button onClick={onEdit} className="shrink-0 rounded px-1.5 py-1 text-[12px] text-muted hover:text-ink">
-        Editar
+        {pick(language, 'Editar', 'Edit')}
       </button>
       <button
         onClick={onDelete}
-        aria-label={`Eliminar ${task.title}`}
-        title="Eliminar tarea"
+        aria-label={`${pick(language, 'Eliminar', 'Delete')} ${task.title}`}
+        title={pick(language, 'Eliminar tarea', 'Delete task')}
         className="shrink-0 rounded p-1 text-muted transition-colors hover:text-[var(--now)]"
       >
         <TrashIcon />
@@ -221,6 +224,7 @@ export function TaskEditModal({
   const updateTask = useStore((s) => s.updateTask);
   const removeTask = useStore((s) => s.removeTask);
   const [askDelete, setAskDelete] = useState(false);
+  const language = useStore((s) => s.settings.language);
 
   if (!task) return null;
   const groupColor = lists.find((l) => l.id === task.listId)?.color ?? PALETTE[0];
@@ -230,22 +234,22 @@ export function TaskEditModal({
       <Modal
         open
         onClose={onClose}
-        title="Editar tarea"
+        title={pick(language, 'Editar tarea', 'Edit task')}
         size="sm"
         footer={
           <>
             <Btn variant="danger" onClick={() => (onDelete ? onDelete(task.id) : setAskDelete(true))}>
-              Eliminar
+              {pick(language, 'Eliminar', 'Delete')}
             </Btn>
             {!task.archived && <Btn onClick={() => { updateTask(task.id, { archived: true }); onClose(); }}>
-              Archivar
+              {pick(language, 'Archivar', 'Archive')}
             </Btn>}
-            <Btn variant="primary" onClick={onClose}>Listo</Btn>
+            <Btn variant="primary" onClick={onClose}>{pick(language, 'Listo', 'Done')}</Btn>
           </>
         }
       >
         <div className="space-y-4 p-5">
-            <Field label="Nombre">
+            <Field label={pick(language, 'Nombre', 'Name')}>
               <input
                 autoFocus
                 value={task.title}
@@ -255,32 +259,32 @@ export function TaskEditModal({
               />
             </Field>
 
-            <Field label="Tipo" hint={task.recurring ? 'Las rutinas se reutilizan y pueden generar una serie.' : 'Los To-Do son únicos y se archivan al completarlos.'}>
+            <Field label={pick(language, 'Tipo', 'Type')} hint={task.recurring ? pick(language, 'Las rutinas se reutilizan y pueden generar una serie.', 'Routines are reusable and can generate a series.') : pick(language, 'Los To-Do son únicos y se archivan al completarlos.', 'To-Dos are one-time tasks and are archived when completed.')}>
               <Segmented
                 value={task.recurring ? 'routine' : 'todo'}
                 onChange={(value) => updateTask(task.id, { recurring: value === 'routine' })}
-                options={[{ id: 'todo', label: 'To-Do' }, { id: 'routine', label: 'Rutina' }]}
+                options={[{ id: 'todo', label: 'To-Do' }, { id: 'routine', label: pick(language, 'Rutina', 'Routine') }]}
               />
             </Field>
 
             {!task.recurring && <>
-              <Field label="Prioridad"><Segmented value={task.priority} onChange={(value) => updateTask(task.id, { priority: value as Task['priority'] })}
-                options={[{ id: 'low', label: 'Baja' }, { id: 'normal', label: 'Normal' }, { id: 'high', label: 'Alta' }, { id: 'urgent', label: 'Urgente' }]} /></Field>
+              <Field label={pick(language, 'Prioridad', 'Priority')}><Segmented value={task.priority} onChange={(value) => updateTask(task.id, { priority: value as Task['priority'] })}
+                options={[{ id: 'low', label: pick(language, 'Baja', 'Low') }, { id: 'normal', label: 'Normal' }, { id: 'high', label: pick(language, 'Alta', 'High') }, { id: 'urgent', label: pick(language, 'Urgente', 'Urgent') }]} /></Field>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Mostrar en Hoy"><input type="date" value={task.plannedDate ?? ''} onChange={(e) => updateTask(task.id, { plannedDate: e.target.value || null, inbox: false })} className={`${inputCls} font-mono`} /></Field>
-                <Field label="Fecha límite"><input type="date" value={task.dueDate ?? ''} onChange={(e) => updateTask(task.id, { dueDate: e.target.value || null })} className={`${inputCls} font-mono`} /></Field>
+                <Field label={pick(language, 'Mostrar en Hoy', 'Show in Today')}><input type="date" value={task.plannedDate ?? ''} onChange={(e) => updateTask(task.id, { plannedDate: e.target.value || null, inbox: false })} className={`${inputCls} font-mono`} /></Field>
+                <Field label={pick(language, 'Fecha límite', 'Due date')}><input type="date" value={task.dueDate ?? ''} onChange={(e) => updateTask(task.id, { dueDate: e.target.value || null })} className={`${inputCls} font-mono`} /></Field>
               </div>
               <label className="flex items-center gap-2 rounded-lg border border-line px-3 py-2.5 text-[12px]"><input type="checkbox" checked={task.inbox}
-                onChange={(e) => updateTask(task.id, { inbox: e.target.checked, plannedDate: e.target.checked ? null : task.plannedDate })} className="h-4 w-4 accent-[var(--accent)]" />Guardar en Inbox para clasificar después</label>
+                onChange={(e) => updateTask(task.id, { inbox: e.target.checked, plannedDate: e.target.checked ? null : task.plannedDate })} className="h-4 w-4 accent-[var(--accent)]" />{pick(language, 'Guardar en Inbox para clasificar después', 'Save to Inbox to sort later')}</label>
             </>}
 
-            <Field label="Duración" hint="Vacío = toma la duración por defecto y la ajustás en la agenda.">
+            <Field label={pick(language, 'Duración', 'Duration')} hint={pick(language, 'Vacío = toma la duración por defecto y la ajustás en la agenda.', 'Empty = use the default duration and adjust it in the schedule.')}>
               <div className="flex flex-wrap items-center gap-1.5">
                 <NumField
                   value={task.estimatedMin}
                   onCommit={(v) => updateTask(task.id, { estimatedMin: v })}
                   allowEmpty
-                  placeholder="libre"
+                  placeholder={pick(language, 'libre', 'flexible')}
                   suffix="min"
                 />
                 <span className="mx-1 h-4 w-px bg-[var(--border)]" />
@@ -290,13 +294,13 @@ export function TaskEditModal({
                     onClick={() => updateTask(task.id, { estimatedMin: m })}
                     className="rounded-md border border-line px-2 py-1 font-mono text-[11px] text-muted hover:text-ink"
                   >
-                    {m === null ? 'libre' : `${m}m`}
+                    {m === null ? pick(language, 'libre', 'flexible') : `${m}m`}
                   </button>
                 ))}
               </div>
             </Field>
 
-            <Field label="Color de la etiqueta">
+            <Field label={pick(language, 'Color de la etiqueta', 'Label color')}>
               <ColorPicker
                 value={task.color}
                 onChange={(c) => updateTask(task.id, { color: c })}
@@ -305,7 +309,7 @@ export function TaskEditModal({
               />
             </Field>
 
-            <Field label="Clasificación">
+            <Field label={pick(language, 'Clasificación', 'Classification')}>
               <select
                 value={task.listId}
                 onChange={(e) => updateTask(task.id, { listId: e.target.value })}
@@ -315,16 +319,16 @@ export function TaskEditModal({
               </select>
             </Field>
 
-            <Field label="Notas">
+            <Field label={pick(language, 'Notas', 'Notes')}>
               <textarea
                 rows={3}
                 value={task.notes}
                 onChange={(e) => updateTask(task.id, { notes: e.target.value })}
-                placeholder="Detalles, links, contexto…"
+                placeholder={pick(language, 'Detalles, links, contexto…', 'Details, links, context…')}
                 className={`${inputCls} resize-y`}
               />
             </Field>
-          <p className="rounded-lg border border-dashed border-line px-3 py-2 text-[11px] leading-snug text-muted">La repetición se configura al abrir un bloque en la agenda. Así podés usar esta misma tarea una vez o con varias frecuencias sin alterar otros eventos.</p>
+          <p className="rounded-lg border border-dashed border-line px-3 py-2 text-[11px] leading-snug text-muted">{pick(language, 'La repetición se configura al abrir un bloque en la agenda. Así podés usar esta misma tarea una vez o con varias frecuencias sin alterar otros eventos.', 'Configure repetition by opening a block in the schedule. This lets you use the same task once or at several frequencies without changing other events.')}</p>
         </div>
       </Modal>
 
@@ -333,9 +337,9 @@ export function TaskEditModal({
           open={askDelete}
           onClose={() => setAskDelete(false)}
           onConfirm={() => { removeTask(task.id); onClose(); }}
-          title="Eliminar tarea"
-          message={`Vas a eliminar "${task.title}".`}
-          detail="Se borran también todos sus bloques de la agenda. Esto no se puede deshacer."
+          title={pick(language, 'Eliminar tarea', 'Delete task')}
+          message={pick(language, `Vas a eliminar "${task.title}".`, `You are about to delete "${task.title}".`)}
+          detail={pick(language, 'Se borran también todos sus bloques de la agenda. Esto no se puede deshacer.', 'All of its schedule blocks will also be deleted. This cannot be undone.')}
         />
       )}
     </>
@@ -348,6 +352,7 @@ function ListEditModal({
   const list = useStore((s) => (id ? s.lists.find((l) => l.id === id) ?? null : null));
   const updateList = useStore((s) => s.updateList);
   const unsortedListId = useStore((s) => s.unsortedListId);
+  const language = useStore((s) => s.settings.language);
   if (!list) return null;
   const protectedList = list.id === unsortedListId || list.name === UNSORTED_NAME;
 
@@ -355,17 +360,17 @@ function ListEditModal({
     <Modal
       open
       onClose={onClose}
-      title="Editar clasificación"
+      title={pick(language, 'Editar clasificación', 'Edit classification')}
       size="sm"
       footer={
         <>
-          {!protectedList && <Btn variant="danger" onClick={() => onDelete(list.id)}>Eliminar clasificación</Btn>}
-          <Btn variant="primary" onClick={onClose}>Listo</Btn>
+          {!protectedList && <Btn variant="danger" onClick={() => onDelete(list.id)}>{pick(language, 'Eliminar clasificación', 'Delete classification')}</Btn>}
+          <Btn variant="primary" onClick={onClose}>{pick(language, 'Listo', 'Done')}</Btn>
         </>
       }
     >
       <div className="space-y-4 p-5">
-        <Field label="Nombre">
+        <Field label={pick(language, 'Nombre', 'Name')}>
           <input
             autoFocus
             value={list.name}
@@ -373,7 +378,7 @@ function ListEditModal({
             className={inputCls}
           />
         </Field>
-        <Field label="Color de la clasificación" hint="Lo heredan las tareas que no tengan color propio.">
+        <Field label={pick(language, 'Color de la clasificación', 'Classification color')} hint={pick(language, 'Lo heredan las tareas que no tengan color propio.', 'Tasks without their own color inherit it.')}>
           <ColorPicker value={list.color} onChange={(c) => c && updateList(list.id, { color: c })} palette={PALETTE} />
         </Field>
       </div>
@@ -393,6 +398,7 @@ function DeleteConfirm({
   const blocks = useStore((s) => s.blocks);
   const removeTask = useStore((s) => s.removeTask);
   const removeList = useStore((s) => s.removeList);
+  const language = useStore((s) => s.settings.language);
 
   const info = useMemo(() => {
     if (!target) return null;
@@ -404,10 +410,10 @@ function DeleteConfirm({
     const pending = all.filter((b) => b.status === 'planned').length;
     const name =
       target.kind === 'task'
-        ? tasks.find((t) => t.id === target.id)?.title ?? 'la tarea'
-        : lists.find((l) => l.id === target.id)?.name ?? 'la clasificación';
+        ? tasks.find((t) => t.id === target.id)?.title ?? pick(language, 'la tarea', 'the task')
+        : lists.find((l) => l.id === target.id)?.name ?? pick(language, 'la clasificación', 'the classification');
     return { taskCount: taskIds.length, blockCount: all.length, pending, name };
-  }, [target, tasks, lists, blocks]);
+  }, [target, tasks, lists, blocks, language]);
 
   if (!target || !info) return null;
 
@@ -416,20 +422,24 @@ function DeleteConfirm({
   const detail =
     info.blockCount === 0
       ? undefined
-      : `Se van a borrar también ${plural(info.blockCount, 'bloque', 'bloques')} de la agenda` +
-        (info.pending > 0 ? ` (${plural(info.pending, 'sigue', 'siguen')} sin completar).` : ', todos ya completados.') +
-        ' Esto no se puede deshacer.';
+      : language === 'en'
+        ? `${plural(info.blockCount, 'schedule block', 'schedule blocks')} will also be deleted` +
+          (info.pending > 0 ? ` (${info.pending} still incomplete).` : ', all already completed.') +
+          ' This cannot be undone.'
+        : `Se van a borrar también ${plural(info.blockCount, 'bloque', 'bloques')} de la agenda` +
+          (info.pending > 0 ? ` (${plural(info.pending, 'sigue', 'siguen')} sin completar).` : ', todos ya completados.') +
+          ' Esto no se puede deshacer.';
 
   return (
     <ConfirmModal
       open
       onClose={onClose}
       onConfirm={() => (target.kind === 'task' ? removeTask(target.id) : removeList(target.id))}
-      title={target.kind === 'task' ? 'Eliminar tarea' : 'Eliminar clasificación'}
+      title={target.kind === 'task' ? pick(language, 'Eliminar tarea', 'Delete task') : pick(language, 'Eliminar clasificación', 'Delete classification')}
       message={
         target.kind === 'task'
-          ? `Vas a eliminar "${info.name}".`
-          : `Vas a eliminar la clasificación "${info.name}" y ${plural(info.taskCount, 'su tarea', 'sus tareas')}.`
+          ? pick(language, `Vas a eliminar "${info.name}".`, `You are about to delete "${info.name}".`)
+          : language === 'en' ? `You are about to delete the classification "${info.name}" and its ${info.taskCount} ${info.taskCount === 1 ? 'task' : 'tasks'}.` : `Vas a eliminar la clasificación "${info.name}" y ${plural(info.taskCount, 'su tarea', 'sus tareas')}.`
       }
       detail={detail}
     />

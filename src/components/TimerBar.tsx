@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import type { Block } from '../types';
 import { useClock, useStore } from '../store';
-import { dateKey, durationLabel, hhmm, minutesOf } from '../lib/time';
+import { clockLabel, dateKey, durationLabel, minutesOf } from '../lib/time';
 import { isReadOnlyBlock } from '../lib/planning';
+import { pick } from '../lib/i18n';
 
 const pad = (n: number) => String(Math.floor(n)).padStart(2, '0');
 
@@ -13,6 +14,7 @@ const pad = (n: number) => String(Math.floor(n)).padStart(2, '0');
 export function TimerBar({ onOpenBlock, onOpenToday, onOpenFocus }: { onOpenBlock: (id: string) => void; onOpenToday: () => void; onOpenFocus: () => void }) {
   const blocks = useStore((s) => s.blocks);
   const now = useClock((s) => s.now);
+  const language = useStore((s) => s.settings.language);
 
   const d = new Date(now);
   const nowMin = d.getHours() * 60 + d.getMinutes();
@@ -52,29 +54,29 @@ export function TimerBar({ onOpenBlock, onOpenToday, onOpenFocus }: { onOpenBloc
         }}
       />
 
-      <button onClick={onOpenFocus} title="Abrir modo Enfoque" className="tabular rounded-lg font-mono text-[21px] font-bold leading-none tracking-tight hover:text-[var(--accent)]">
-        {current ? `${pad(remaining / 60)}:${pad(remaining % 60)}` : hhmm(nowMin)}
+      <button onClick={onOpenFocus} title={pick(language, 'Abrir modo Enfoque', 'Open Focus mode')} className="tabular rounded-lg font-mono text-[21px] font-bold leading-none tracking-tight hover:text-[var(--accent)]">
+        {current ? `${pad(remaining / 60)}:${pad(remaining % 60)}` : clockLabel(nowMin)}
       </button>
 
       <div className="min-w-0 flex-1">
         {current ? (
           <button onClick={() => onOpenBlock(current.id)} className="block max-w-full truncate text-left text-[12.5px] font-medium">
-            {isBreak ? 'Pausa' : current.title}
+            {isBreak ? pick(language, 'Pausa', 'Break') : current.title}
             <span className="tabular ml-2 font-mono text-[10.5px] font-normal text-muted">
-              hasta {hhmm(minutesOf(current.startsAt) + current.durationMin)}
+              {pick(language, 'hasta', 'until')} {clockLabel(minutesOf(current.startsAt) + current.durationMin)}
             </span>
           </button>
         ) : (
           <p className="truncate text-[12.5px] font-medium text-muted">
-            {today.length === 0 ? 'Hoy no tenés nada agendado' : 'Hueco libre'}
+            {today.length === 0 ? pick(language, 'Hoy no tenés nada agendado', 'Nothing scheduled today') : pick(language, 'Hueco libre', 'Free time')}
           </p>
         )}
         <p className="truncate text-[10.5px] text-muted">
           {next
-            ? `${next.kind === 'break' ? 'Pausa' : next.title} en ${durationLabel(untilNext!)}`
+            ? `${next.kind === 'break' ? pick(language, 'Pausa', 'Break') : next.title} ${pick(language, 'en', 'in')} ${durationLabel(untilNext!)}`
             : current
-              ? 'Último bloque del día'
-              : 'Marcá una franja en la grilla para agendar'}
+              ? pick(language, 'Último bloque del día', 'Last block of the day')
+              : pick(language, 'Marcá una franja en la grilla para agendar', 'Select a time range on the grid to schedule')}
         </p>
       </div>
 
@@ -84,14 +86,14 @@ export function TimerBar({ onOpenBlock, onOpenToday, onOpenFocus }: { onOpenBloc
           className="rounded-lg px-3 py-1.5 text-[12px] font-semibold"
           style={{ background: 'var(--now)', color: '#fff' }}
         >
-          {openPast.length} sin cerrar
+          {openPast.length} {pick(language, 'sin cerrar', 'unclosed')}
         </button>
       ) : (
         <button
           onClick={onOpenToday}
           className="rounded-lg border border-line px-3 py-1.5 text-[12px] font-medium text-muted transition-colors hover:text-ink"
         >
-          Hoy
+          {pick(language, 'Hoy', 'Today')}
         </button>
       )}
     </div>

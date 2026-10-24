@@ -8,10 +8,25 @@ import { findAvailableStart } from '../src/lib/conflicts';
 import { parseTaskDraft } from '../src/lib/taskCapture';
 import { parseAiPlan } from '../src/lib/mcpBridge';
 import { fetchAllPages } from '../src/lib/pagination';
+import { formatClock, translate } from '../src/lib/i18n';
+import { cleanPastUnclosed, pastUnclosedBlocks, restorePastCleanup } from '../src/lib/overdue';
 
 const block = (id: string, startsAt: string, durationMin = 30, pinned = false): Block => ({
   id, taskId: null, title: id, color: '#123456', startsAt, durationMin,
   kind: 'task', status: 'planned', closedAt: null, pinned, seriesId: null, notes: '',
+});
+
+test('la capa de idioma conserva claves equivalentes en español e inglés', () => {
+  assert.equal(translate('es', 'settings'), 'Ajustes');
+  assert.equal(translate('en', 'settings'), 'Settings');
+  assert.equal(translate('en', 'weekStarts'), 'Week starts on');
+});
+
+test('el reloj presenta 24 o 12 horas sin cambiar los minutos guardados', () => {
+  assert.equal(formatClock(0, '24h'), '00:00');
+  assert.equal(formatClock(0, '12h'), '12:00 AM');
+  assert.equal(formatClock(13 * 60 + 5, '24h'), '13:05');
+  assert.equal(formatClock(13 * 60 + 5, '12h'), '1:05 PM');
 });
 
 test('normaliza datos antiguos y la grilla de diez minutos', () => {
@@ -61,6 +76,47 @@ test('un evento externo de solo lectura actúa como obstáculo y no acepta parch
     { id: 'google', patch: { startsAt: '2026-08-22T12:00' } },
   ], 23 * 60);
   assert.equal(patched.google.startsAt, '2026-08-22T09:00');
+});
+
+test('la limpieza cierra solo pendientes de días anteriores y se puede deshacer', () => {
+  const oneTime: Task = {
+    id: 'one-time', listId: 'list', title: 'Única', estimatedMin: 30, color: null, recurring: false,
+    repeat: 'none', repeatUntil: null, repeatWeekdays: null, priority: 'normal', plannedDate: null,
+    dueDate: null, inbox: false, archived: true, notes: '', order: 0,
+  };
+  const routine: Task = { ...oneTime, id: 'routine', title: 'Rutina', recurring: true };
+  const readOnly: Block = {
+    ...block('external', '2026-08-21T11:00'),
+    source: 'google-calendar', syncStatus: 'synced',
+    external: { provider: 'google-calendar', accountId: 'a', calendarId: 'primary', eventId: 'e', etag: null, updatedAt: null, readOnly: true },
+  };
+  const blocks = {
+    old: { ...block('old', '2026-08-21T09:00'), taskId: oneTime.id },
+    'routine-block': { ...block('routine-block', '2026-08-22T09:00'), taskId: routine.id },
+    today: block('today', '2026-08-23T09:00'),
+    done: { ...block('done', '2026-08-21T10:00'), status: 'done' as const, closedAt: 9 },
+    break: { ...block('break', '2026-08-21T10:30'), kind: 'break' as const },
+    external: readOnly,
+  };
+
+  assert.deepEqual(pastUnclosedBlocks(blocks, '2026-08-23').map((item) => item.id), ['routine-block', 'old']);
+  const cleaned = cleanPastUnclosed(blocks, [oneTime, routine], '2026-08-23', 123);
+  assert.equal(cleaned.blocks.old.status, 'skipped');
+  assert.equal(cleaned.blocks.old.closedAt, 123);
+  assert.equal(cleaned.blocks['routine-block'].status, 'skipped');
+  assert.equal(cleaned.blocks.today.status, 'planned');
+  assert.equal(cleaned.blocks.done.status, 'done');
+  assert.equal(cleaned.blocks.break.status, 'planned');
+  assert.equal(cleaned.blocks.external.status, 'planned');
+  assert.equal(cleaned.tasks.find((task) => task.id === oneTime.id)?.archived, false);
+  assert.equal(cleaned.tasks.find((task) => task.id === routine.id)?.archived, true);
+
+  assert.ok(cleaned.snapshot);
+  const restored = restorePastCleanup(cleaned.blocks, cleaned.tasks, cleaned.snapshot!);
+  assert.equal(restored.blocks.old.status, 'planned');
+  assert.equal(restored.blocks.old.closedAt, null);
+  assert.equal(restored.blocks['routine-block'].status, 'planned');
+  assert.equal(restored.tasks.find((task) => task.id === oneTime.id)?.archived, true);
 });
 
 test('al final del día busca un hueco anterior en vez de volver a superponer', () => {
@@ -155,6 +211,14 @@ test('la captura natural separa el día previsto de la fecha límite', () => {
   assert.equal(parsed?.dueDate, '2026-08-30');
   assert.equal(parsed?.priority, 'urgent');
   assert.equal(parsed?.title, 'Pagar matrícula');
+});
+
+test('natural capture supports English keywords and US date order', () => {
+  const parsed = parseTaskDraft('Prepare report tomorrow 45m high priority #Work due 8/30', new Date(2026, 7, 22), 'en-US');
+  assert.deepEqual(parsed, {
+    title: 'Prepare report', estimatedMin: 50, plannedDate: '2026-08-23', dueDate: '2026-08-30',
+    priority: 'high', classification: 'Work',
+  });
 });
 
 test('el organizador prioriza urgencia y luego fecha límite', () => {

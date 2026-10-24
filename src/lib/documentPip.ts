@@ -36,7 +36,7 @@ function copyStyles(target: Document): void {
   }
 }
 
-export async function openFocusPictureInPicture(): Promise<Window | null> {
+export async function openFocusPictureInPicture(title = 'Tempo · Concentración'): Promise<Window | null> {
   const api = (window as PictureInPictureCapableWindow).documentPictureInPicture;
   if (!api) return null;
   if (api.window && !api.window.closed) {
@@ -45,7 +45,7 @@ export async function openFocusPictureInPicture(): Promise<Window | null> {
   }
 
   const floating = await api.requestWindow({ width: 420, height: 590 });
-  floating.document.title = 'Tempo · Concentración';
+  floating.document.title = title;
   floating.document.documentElement.dataset.theme = document.documentElement.dataset.theme;
   floating.document.documentElement.dataset.font = document.documentElement.dataset.font;
   floating.document.documentElement.style.height = '100%';

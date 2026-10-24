@@ -1,11 +1,12 @@
 import { memo, useState } from 'react';
 import type { Block } from '../types';
 import { useClock, useDrag, useStore, useUI } from '../store';
-import { clamp, durationLabel, hhmm, minToPx, minutesOf, pxToMin } from '../lib/time';
+import { clamp, clockLabel, durationLabel, minToPx, minutesOf, pxToMin } from '../lib/time';
 import { startPointerGesture } from '../lib/gesture';
 import { isReadOnlyBlock } from '../lib/planning';
 import { ConfirmModal } from './Modal';
 import { EventIcon } from './EventIcon';
+import { pick } from '../lib/i18n';
 
 interface Props {
   block: Block;
@@ -20,11 +21,12 @@ interface Props {
 function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount, onOpen }: Props) {
   const slotPx = useStore((s) => s.settings.slotPx);
   const mobileEditLocked = useStore((s) => s.settings.mobileEditLocked);
+  const language = useStore((s) => s.settings.language);
   const groupName = useStore((s) => {
     if (block.source === 'google-calendar') return 'Google Calendar';
-    if (block.kind === 'break') return 'Pausa';
+    if (block.kind === 'break') return pick(s.settings.language, 'Pausa', 'Break');
     const task = block.taskId ? s.tasks.find((item) => item.id === block.taskId) : null;
-    return task ? s.lists.find((list) => list.id === task.listId)?.name ?? 'Sin clasificar' : 'Sin clasificar';
+    return task ? s.lists.find((list) => list.id === task.listId)?.name ?? pick(s.settings.language, 'Sin clasificar', 'Unsorted') : pick(s.settings.language, 'Sin clasificar', 'Unsorted');
   });
   const setPinned = useStore((s) => s.setPinned);
   const removeBlock = useStore((s) => s.removeBlock);
@@ -132,7 +134,7 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
       data-block-id={block.id}
       tabIndex={0}
       aria-pressed={selected}
-      aria-label={`${block.title}, clasificación ${groupName}, ${hhmm(startMin)}, ${durationLabel(durationMin)}`}
+      aria-label={`${block.title}, ${pick(language, 'clasificación', 'classification')} ${groupName}, ${clockLabel(startMin)}, ${durationLabel(durationMin)}`}
       onPointerDown={(e) => grab(e, 'move')}
       onDoubleClick={(e) => { e.stopPropagation(); onOpen(block.id); }}
       onKeyDown={(e) => {
@@ -194,25 +196,25 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
           {block.icon && <EventIcon value={block.icon} size={tiny ? 12 : 14} className="mr-1 inline-block align-[-2px]" />}{block.title}
         </p>
         {tiny && (
-          <span className="tabular shrink-0 pr-5 font-mono text-[10px] text-muted">{hhmm(startMin)}</span>
+          <span className="tabular shrink-0 pr-5 font-mono text-[10px] text-muted">{clockLabel(startMin)}</span>
         )}
         {!tiny && (
           <div className="mt-0.5 min-w-0 space-y-[3px] pr-8 text-[9.5px] leading-none text-muted">
             <p
               className="truncate font-semibold uppercase tracking-[0.055em]"
-              title={`Clasificación: ${groupName}`}
+              title={`${pick(language, 'Clasificación', 'Classification')}: ${groupName}`}
             >
               {groupName}
             </p>
             {!compact && (
-              <p className="tabular truncate font-mono" title={`${hhmm(startMin)}–${hhmm(startMin + durationMin)}`}>
-                {hhmm(startMin)}–{hhmm(startMin + durationMin)}
+              <p className="tabular truncate font-mono" title={`${clockLabel(startMin)}–${clockLabel(startMin + durationMin)}`}>
+                {clockLabel(startMin)}–{clockLabel(startMin + durationMin)}
               </p>
             )}
             {!compact && (
               <p className="tabular truncate font-mono">
                 {durationMin} min
-                {overdue && <span style={{ color: 'var(--now)' }}> · sin cerrar</span>}
+                {overdue && <span style={{ color: 'var(--now)' }}> · {pick(language, 'sin cerrar', 'unclosed')}</span>}
               </p>
             )}
           </div>
@@ -231,8 +233,8 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
           e.stopPropagation();
           setStatus(block.id, done ? 'skipped' : skipped ? 'planned' : 'done');
         }}
-        aria-label={done ? 'Marcar como omitido' : skipped ? 'Marcar como pendiente' : 'Marcar como hecho'}
-        title={done ? 'Hecho — clic para omitir' : skipped ? 'Omitido — clic para volver a pendiente' : 'Marcar como hecho'}
+        aria-label={done ? pick(language, 'Marcar como omitido', 'Mark as skipped') : skipped ? pick(language, 'Marcar como pendiente', 'Mark as pending') : pick(language, 'Marcar como hecho', 'Mark as done')}
+        title={done ? pick(language, 'Hecho — clic para omitir', 'Done — click to skip') : skipped ? pick(language, 'Omitido — clic para volver a pendiente', 'Skipped — click to return to pending') : pick(language, 'Marcar como hecho', 'Mark as done')}
         className="absolute right-1 top-1 z-[55] grid h-5 w-5 shrink-0 place-items-center rounded-full border transition-colors"
         style={{
           borderColor: done
@@ -258,7 +260,7 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
       {readOnly && (
         <span
           className="absolute right-1 top-1 z-[55] rounded-md border border-line bg-surface/85 px-1.5 py-0.5 text-[9px] font-semibold text-muted"
-          title="Evento administrado por Google Calendar"
+          title={pick(language, 'Evento administrado por Google Calendar', 'Event managed by Google Calendar')}
         >
           Google
         </span>
@@ -276,8 +278,8 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
         <button
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); setPinned([block.id], !block.pinned); }}
-          aria-label={block.pinned ? 'Soltar bloque' : 'Fijar bloque'}
-          title={block.pinned ? 'Fijo: no se mueve. Clic para soltarlo.' : 'Fijar en este horario'}
+          aria-label={block.pinned ? pick(language, 'Soltar bloque', 'Unpin block') : pick(language, 'Fijar bloque', 'Pin block')}
+          title={block.pinned ? pick(language, 'Fijo: no se mueve. Clic para soltarlo.', 'Pinned: it will not move. Click to unpin.') : pick(language, 'Fijar en este horario', 'Pin at this time')}
           className="grid h-5 w-5 shrink-0 place-items-center rounded-full"
           style={block.pinned ? { background: 'var(--pin)', color: '#fff' } : { color: 'var(--muted)' }}
         >
@@ -289,8 +291,8 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
         <button
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); setAskDelete(true); }}
-          aria-label={`Eliminar ${block.title}`}
-          title="Eliminar bloque"
+          aria-label={`${pick(language, 'Eliminar', 'Delete')} ${block.title}`}
+          title={pick(language, 'Eliminar bloque', 'Delete block')}
           className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted hover:text-[var(--now)]"
         >
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -302,8 +304,8 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
         <button
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => { e.stopPropagation(); onOpen(block.id); }}
-          aria-label={`Editar ${block.title}`}
-          title="Editar bloque"
+          aria-label={`${pick(language, 'Editar', 'Edit')} ${block.title}`}
+          title={pick(language, 'Editar bloque', 'Edit block')}
           className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted hover:text-ink"
         >
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -317,7 +319,7 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
       {!readOnly && <div
         onPointerDown={(e) => grab(e, 'resizeTop')}
         role="button"
-        aria-label={`Extender ${block.title} desde el inicio`}
+        aria-label={`${pick(language, 'Extender', 'Extend')} ${block.title} ${pick(language, 'desde el inicio', 'from the start')}`}
         className="block-resize-handle absolute inset-x-0 top-0 z-50 flex cursor-ns-resize items-start justify-center"
         style={{ touchAction: 'pan-y', height: Math.min(10, Math.max(3, height * 0.22)) }}
       >
@@ -327,7 +329,7 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
       {!readOnly && <div
         onPointerDown={(e) => grab(e, 'resize')}
         role="button"
-        aria-label={`Extender ${block.title} desde el final`}
+        aria-label={`${pick(language, 'Extender', 'Extend')} ${block.title} ${pick(language, 'desde el final', 'from the end')}`}
         className="block-resize-handle absolute inset-x-0 bottom-0 z-50 flex cursor-ns-resize items-end justify-center"
         style={{ touchAction: 'pan-y', height: Math.min(10, Math.max(3, height * 0.22)) }}
       >
@@ -338,10 +340,10 @@ function BlockViewInner({ block, dayIndex, dayStartMin, isToday, lane, laneCount
       open={askDelete}
       onClose={() => setAskDelete(false)}
       onConfirm={() => removeBlock(block.id)}
-      title="Eliminar bloque"
-      message={`¿Querés eliminar “${block.title}” de la agenda?`}
-      detail={block.seriesId ? 'Se elimina únicamente esta ocurrencia. La serie y sus demás referencias no cambian.' : 'Esta acción no se puede deshacer.'}
-      confirmLabel="Eliminar"
+      title={pick(language, 'Eliminar bloque', 'Delete block')}
+      message={pick(language, `¿Querés eliminar “${block.title}” de la agenda?`, `Delete “${block.title}” from the schedule?`)}
+      detail={block.seriesId ? pick(language, 'Se elimina únicamente esta ocurrencia. La serie y sus demás referencias no cambian.', 'Only this occurrence will be deleted. The series and its other references will not change.') : pick(language, 'Esta acción no se puede deshacer.', 'This action cannot be undone.')}
+      confirmLabel={pick(language, 'Eliminar', 'Delete')}
     />
     </>
   );

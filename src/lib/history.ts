@@ -53,22 +53,23 @@ const snapOf = (s: { lists: List[]; tasks: Task[]; blocks: Record<string, Block>
 });
 
 function logChange(state: Snap, prev: Snap): void {
+  const language = useStore.getState().settings.language;
   const before = prev.blocks;
   const after = state.blocks;
   const added = Object.values(after).filter((block) => !before[block.id]);
   const removed = Object.values(before).filter((block) => !after[block.id]);
   if (added.length) {
     useHistory.getState().addEntry({
-      title: added.length === 1 ? `Agendaste ${added[0].title}` : `Agendaste ${added.length} bloques`,
-      detail: added.length === 1 ? added[0].startsAt.replace('T', ' · ') : 'La estructura quedó guardada en la agenda.',
+      title: added.length === 1 ? (language === 'en' ? `Scheduled ${added[0].title}` : `Agendaste ${added[0].title}`) : (language === 'en' ? `Scheduled ${added.length} blocks` : `Agendaste ${added.length} bloques`),
+      detail: added.length === 1 ? added[0].startsAt.replace('T', ' · ') : (language === 'en' ? 'The structure was saved to the schedule.' : 'La estructura quedó guardada en la agenda.'),
       blockId: added.length === 1 ? added[0].id : undefined,
     });
     return;
   }
   if (removed.length) {
     useHistory.getState().addEntry({
-      title: removed.length === 1 ? `Quitaste ${removed[0].title}` : `Quitaste ${removed.length} bloques`,
-      detail: 'Podés recuperarlo con Deshacer.',
+      title: removed.length === 1 ? (language === 'en' ? `Removed ${removed[0].title}` : `Quitaste ${removed[0].title}`) : (language === 'en' ? `Removed ${removed.length} blocks` : `Quitaste ${removed.length} bloques`),
+      detail: language === 'en' ? 'You can recover it with Undo.' : 'Podés recuperarlo con Deshacer.',
     });
     return;
   }
@@ -77,11 +78,11 @@ function logChange(state: Snap, prev: Snap): void {
     const first = changed[0];
     const old = before[first.id];
     const statusTitle = old.status !== first.status
-      ? first.status === 'done' ? `Completaste ${first.title}` : first.status === 'skipped' ? `Omitiste ${first.title}` : `Reabriste ${first.title}`
+      ? first.status === 'done' ? (language === 'en' ? `Completed ${first.title}` : `Completaste ${first.title}`) : first.status === 'skipped' ? (language === 'en' ? `Skipped ${first.title}` : `Omitiste ${first.title}`) : (language === 'en' ? `Reopened ${first.title}` : `Reabriste ${first.title}`)
       : null;
     useHistory.getState().addEntry({
-      title: statusTitle ?? (changed.length === 1 ? `Actualizaste ${first.title}` : `Moviste ${changed.length} bloques`),
-      detail: old.startsAt !== first.startsAt ? `Nuevo horario: ${first.startsAt.replace('T', ' · ')}` : undefined,
+      title: statusTitle ?? (changed.length === 1 ? (language === 'en' ? `Updated ${first.title}` : `Actualizaste ${first.title}`) : (language === 'en' ? `Moved ${changed.length} blocks` : `Moviste ${changed.length} bloques`)),
+      detail: old.startsAt !== first.startsAt ? `${language === 'en' ? 'New time' : 'Nuevo horario'}: ${first.startsAt.replace('T', ' · ')}` : undefined,
       blockId: first.id,
     });
     return;
@@ -89,8 +90,8 @@ function logChange(state: Snap, prev: Snap): void {
   const taskDelta = state.tasks.length - prev.tasks.length;
   if (taskDelta !== 0) {
     useHistory.getState().addEntry({
-      title: taskDelta > 0 ? 'Agregaste una tarea' : 'Quitaste una tarea',
-      detail: 'El cambio quedó guardado en tu plan.',
+      title: taskDelta > 0 ? (language === 'en' ? 'Added a task' : 'Agregaste una tarea') : (language === 'en' ? 'Removed a task' : 'Quitaste una tarea'),
+      detail: language === 'en' ? 'The change was saved to your plan.' : 'El cambio quedó guardado en tu plan.',
     });
   }
 }

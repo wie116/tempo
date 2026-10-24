@@ -8,6 +8,9 @@ import {
   endOfWeek,
 } from 'date-fns';
 import { es } from 'date-fns/locale';
+import type { Locale } from 'date-fns';
+import type { TimeFormat } from '../types';
+import { formatClock } from './i18n';
 
 /** Toda la app snapea a esta unidad. Cambiala acá y cambia en todos lados. */
 export const SLOT_MIN = 10;
@@ -54,8 +57,10 @@ export function hhmm(minutesFromMidnight: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-/** Etiqueta de la regla horaria: "07", "14". */
-export const hourLabel = (h: number) => String(h % 24).padStart(2, '0');
+/** Etiqueta compacta de la regla horaria: "07", "14", "7a", "2p". */
+export const hourLabel = (h: number) => activeTimeFormat === '12h'
+  ? `${h % 12 || 12}${h % 24 < 12 ? 'a' : 'p'}`
+  : String(h % 24).padStart(2, '0');
 
 /** "1 h 30" · "45 min" */
 export function durationLabel(min: number): string {
@@ -65,7 +70,29 @@ export function durationLabel(min: number): string {
   return m === 0 ? `${h} h` : `${h} h ${m}`;
 }
 
-export const fmt = (d: Date, pattern: string) => format(d, pattern, { locale: es });
+let activeDateLocale: Locale = es;
+let activeDateLanguage: 'es' | 'en' = 'es';
+let activeTimeFormat: TimeFormat = '24h';
+
+export function configureDateFormatting(locale: Locale, language: 'es' | 'en', timeFormat: TimeFormat = '24h') {
+  activeDateLocale = locale;
+  activeDateLanguage = language;
+  activeTimeFormat = timeFormat;
+}
+
+/** Hora para lectura en la interfaz. Los campos editables siguen usando HH:MM estable. */
+export const clockLabel = (minutes: number) => formatClock(minutes, activeTimeFormat);
+
+export const fmt = (d: Date, pattern: string) => {
+  let localizedPattern = pattern;
+  if (activeDateLanguage === 'en') {
+    localizedPattern = localizedPattern
+      .replace("'Semana del' d 'de' LLLL", "'Week of' LLLL d")
+      .replace("EEEE d 'de' LLLL", 'EEEE, LLLL d')
+      .replace("d 'de' LLLL", 'LLLL d');
+  }
+  return format(d, localizedPattern, { locale: activeDateLocale });
+};
 
 /* ---------- Zoom ---------- */
 

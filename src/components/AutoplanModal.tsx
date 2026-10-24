@@ -5,16 +5,18 @@ import { autoplan, candidatesFromDay, candidatesFromTasks, findGaps } from '../l
 import { undo } from '../lib/history';
 import type { PlanCandidate } from '../lib/autoplan';
 import type { AutoplanConfig, PlanOrder, PlanSource } from '../types';
-import { dateKey, durationLabel, fmt, hhmm, snap } from '../lib/time';
+import { clockLabel, dateKey, durationLabel, fmt, snap } from '../lib/time';
 import { usePlannerLog } from '../lib/plannerLog';
 import { useToasts } from '../store';
 import { Btn, Field, Modal, NumField, Segmented, Tabs, TimeField } from './Modal';
+import { pick } from '../lib/i18n';
+import type { AppLanguage } from '../types';
 
-const ORDERS: { id: PlanOrder; label: string }[] = [
-  { id: 'list', label: 'Orden de lista' },
-  { id: 'random', label: 'Al azar' },
-  { id: 'longest', label: 'Largas primero' },
-  { id: 'shortest', label: 'Cortas primero' },
+const ordersFor = (language: AppLanguage): { id: PlanOrder; label: string }[] => [
+  { id: 'list', label: pick(language, 'Orden de lista', 'List order') },
+  { id: 'random', label: pick(language, 'Al azar', 'Random') },
+  { id: 'longest', label: pick(language, 'Largas primero', 'Longest first') },
+  { id: 'shortest', label: pick(language, 'Cortas primero', 'Shortest first') },
 ];
 
 export function AutoplanModal({ open, onClose, initialSource }: { open: boolean; onClose: () => void; initialSource?: PlanSource }) {
@@ -30,6 +32,7 @@ export function AutoplanModal({ open, onClose, initialSource }: { open: boolean;
   const applyPlan = useStore((s) => s.applyPlan);
   const applyReorder = useStore((s) => s.applyReorder);
   const unscheduleBlocks = useStore((s) => s.unscheduleBlocks);
+  const language = useStore((s) => s.settings.language);
 
   const [seed, setSeed] = useState(() => Date.now());
   const [dropped, setDropped] = useState<string[]>([]);
@@ -123,7 +126,7 @@ export function AutoplanModal({ open, onClose, initialSource }: { open: boolean;
         taskId: p.taskId, color: p.color,
       })),
       ...excludedCandidates.map((p) => ({
-        title: p.title, durationMin: p.durationMin, reason: 'la sacaste vos',
+        title: p.title, durationMin: p.durationMin, reason: pick(language, 'la sacaste vos', 'removed manually'),
         taskId: p.taskId, color: p.color,
       })),
     ];
@@ -150,9 +153,9 @@ export function AutoplanModal({ open, onClose, initialSource }: { open: boolean;
     useToasts.getState().push({
       kind: 'info',
       title: leftoverAll.length
-        ? `Organizador: agendó ${keep.length}, ${leftoverAll.length} no entraron`
-        : `Organizador: agendó ${keep.length} sin problemas`,
-      body: leftoverAll.length ? 'Quedaron listadas en Tareas y en el panel de la derecha.' : undefined,
+        ? pick(language, `Organizador: agendó ${keep.length}, ${leftoverAll.length} no entraron`, `Arrange: scheduled ${keep.length}; ${leftoverAll.length} did not fit`)
+        : pick(language, `Organizador: agendó ${keep.length} sin problemas`, `Arrange: scheduled ${keep.length} successfully`),
+      body: leftoverAll.length ? pick(language, 'Quedaron listadas en Tareas y en el panel de la derecha.', 'They remain listed in Tasks and in the right panel.') : undefined,
       ttl: leftoverAll.length ? 0 : 6000,
       onUndo: undo,
     });
@@ -167,41 +170,41 @@ export function AutoplanModal({ open, onClose, initialSource }: { open: boolean;
     <Modal
       open={open}
       onClose={onClose}
-      title="Organizar día"
+      title={pick(language, 'Organizar día', 'Arrange day')}
       subtitle={
         reordering
-          ? 'Reacomoda los bloques del día. Lo completado, lo que ya arrancó y las pausas no se mueven.'
-          : 'Agenda tus tareas pendientes en los huecos libres, sin mover nada de lo que ya está.'
+          ? pick(language, 'Reacomoda los bloques del día. Lo completado, lo que ya arrancó y las pausas no se mueven.', 'Rearrange the day’s blocks. Completed, started, and break blocks stay in place.')
+          : pick(language, 'Agenda tus tareas pendientes en los huecos libres, sin mover nada de lo que ya está.', 'Schedule pending tasks in free gaps without moving existing blocks.')
       }
       footer={
         <>
           {cfg.order === 'random' && (
-            <Btn onClick={() => setSeed(Date.now())}>Mezclar de nuevo</Btn>
+            <Btn onClick={() => setSeed(Date.now())}>{pick(language, 'Mezclar de nuevo', 'Shuffle again')}</Btn>
           )}
-          <Btn onClick={onClose}>Cancelar</Btn>
+          <Btn onClick={onClose}>{pick(language, 'Cancelar', 'Cancel')}</Btn>
           <Btn variant="primary" onClick={apply} disabled={keep.length === 0 && result.leftover.length === 0}>
-            {reordering ? 'Reacomodar' : `Agendar ${keep.length || ''}`}
+            {reordering ? pick(language, 'Reacomodar', 'Rearrange') : `${pick(language, 'Agendar', 'Schedule')} ${keep.length || ''}`}
           </Btn>
         </>
       }
     >
       <Tabs active={tab} onChange={setTab} tabs={[
-        { id: 'setup' as const, label: 'Configuración' },
-        { id: 'preview' as const, label: `Vista previa (${keep.length})` },
+        { id: 'setup' as const, label: pick(language, 'Configuración', 'Setup') },
+        { id: 'preview' as const, label: `${pick(language, 'Vista previa', 'Preview')} (${keep.length})` },
       ]} />
       {tab === 'setup' && <div className="space-y-4 p-5">
-        <Field label="Qué acomodar">
+        <Field label={pick(language, 'Qué acomodar', 'What to arrange')}>
           <Segmented
             value={cfg.source}
             onChange={(v) => { setCfg({ source: v as PlanSource }); setDropped([]); }}
             options={[
-              { id: 'today', label: 'Bloques del día' },
-              { id: 'pending', label: 'Tareas pendientes' },
+              { id: 'today', label: pick(language, 'Bloques del día', 'Day blocks') },
+              { id: 'pending', label: pick(language, 'Tareas pendientes', 'Pending tasks') },
             ]}
           />
         </Field>
 
-        <Field label="Día" hint="También cambia el día que estás viendo en la agenda">
+        <Field label={pick(language, 'Día', 'Day')} hint={pick(language, 'También cambia el día que estás viendo en la agenda', 'Also changes the day shown in the schedule')}>
           <div className="flex flex-wrap items-center gap-2">
             <input
               type="date"
@@ -213,20 +216,20 @@ export function AutoplanModal({ open, onClose, initialSource }: { open: boolean;
               onClick={() => setCursor(dateKey(new Date()))}
               className="rounded-lg border border-line px-2.5 py-1.5 text-[12.5px] text-muted hover:text-ink"
             >
-              Hoy
+              {pick(language, 'Hoy', 'Today')}
             </button>
-            <span className="text-[12px] capitalize text-muted">{fmt(day, "EEEE d 'de' LLLL")}</span>
+            <span className="text-[12px] capitalize text-muted">{fmt(day, language === 'en' ? 'EEEE, LLLL d' : "EEEE d 'de' LLLL")}</span>
           </div>
         </Field>
 
-        <Field label="Empezar">
+        <Field label={pick(language, 'Empezar', 'Start')}>
           <Segmented
             value={cfg.from}
             onChange={(v) => setCfg({ from: v })}
             options={[
-              { id: 'now' as const, label: 'Ahora' },
-              { id: 'dayStart' as const, label: 'Inicio de jornada' },
-              { id: 'custom' as const, label: 'Hora puntual' },
+              { id: 'now' as const, label: pick(language, 'Ahora', 'Now') },
+              { id: 'dayStart' as const, label: pick(language, 'Inicio de jornada', 'Start of day') },
+              { id: 'custom' as const, label: pick(language, 'Hora puntual', 'Specific time') },
             ]}
           />
           {cfg.from === 'custom' && (
@@ -236,7 +239,7 @@ export function AutoplanModal({ open, onClose, initialSource }: { open: boolean;
           )}
           {cfg.from === 'dayStart' && (
             <p className="mt-1 text-[11px] leading-snug text-muted">
-              Útil para planificar un día que no es hoy: arranca al inicio de tu jornada en vez de "ahora".
+              {pick(language, 'Útil para planificar un día que no es hoy: arranca al inicio de tu jornada en vez de "ahora".', 'Useful when planning another day: starts at the beginning of your working day instead of “now”.')}
             </p>
           )}
         </Field>
@@ -249,22 +252,22 @@ export function AutoplanModal({ open, onClose, initialSource }: { open: boolean;
           autoFitMin={autoFitMin}
         />
 
-        <Field label="Orden">
-          <Segmented value={cfg.order} onChange={(v) => setCfg({ order: v })} options={ORDERS} />
+        <Field label={pick(language, 'Orden', 'Order')}>
+          <Segmented value={cfg.order} onChange={(v) => setCfg({ order: v })} options={ordersFor(language)} />
         </Field>
 
         <div className="grid gap-4 sm:grid-cols-2">
           {!reordering && (
-            <Field label="Sin duración propia" hint="Cuánto dura una tarea que dejaste libre">
+            <Field label={pick(language, 'Sin duración propia', 'No set duration')} hint={pick(language, 'Cuánto dura una tarea que dejaste libre', 'Duration for a task left flexible')}>
               <NumField value={cfg.defaultMin} onCommit={(v) => setCfg({ defaultMin: v ?? 30 })} suffix="min" />
             </Field>
           )}
-          <Field label="Aire entre bloques" hint="Múltiplos de 10 para que todo caiga en la grilla">
+          <Field label={pick(language, 'Aire entre bloques', 'Space between blocks')} hint={pick(language, 'Múltiplos de 10 para que todo caiga en la grilla', 'Multiples of 10 so everything aligns to the grid')}>
             <Segmented
               value={String(cfg.gapMin)}
               onChange={(v) => setCfg({ gapMin: Number(v) })}
               options={[
-                { id: '0', label: 'Pegados' },
+                { id: '0', label: pick(language, 'Pegados', 'None') },
                 { id: '10', label: '10m' },
                 { id: '20', label: '20m' },
                 { id: '30', label: '30m' },
@@ -276,7 +279,7 @@ export function AutoplanModal({ open, onClose, initialSource }: { open: boolean;
         {/* Las clasificaciones solo tienen sentido cuando salimos a buscar tareas nuevas */}
         {!reordering && (
           <>
-            <Field label="Clasificaciones">
+            <Field label={pick(language, 'Clasificaciones', 'Classifications')}>
               <div className="rounded-lg border border-line">
                 <label className="flex items-center gap-2.5 border-b border-line px-3 py-2 text-[13px] font-medium">
                   <input
@@ -286,7 +289,7 @@ export function AutoplanModal({ open, onClose, initialSource }: { open: boolean;
                     onChange={(e) => setCfg({ listIds: e.target.checked ? null : [] })}
                     className="h-4 w-4 accent-[var(--accent)]"
                   />
-                  Todas las clasificaciones
+                  {pick(language, 'Todas las clasificaciones', 'All classifications')}
                 </label>
                 <div className="max-h-40 overflow-y-auto p-1">
                   {lists.map((l) => {
@@ -322,7 +325,7 @@ export function AutoplanModal({ open, onClose, initialSource }: { open: boolean;
                 onChange={(e) => setCfg({ includeRecurring: e.target.checked })}
                 className="h-4 w-4 accent-[var(--accent)]"
               />
-              Incluir tareas recurrentes ↻
+              {pick(language, 'Incluir tareas recurrentes', 'Include recurring tasks')} ↻
             </label>
           </>
         )}
@@ -331,23 +334,23 @@ export function AutoplanModal({ open, onClose, initialSource }: { open: boolean;
       {/* Vista previa */}
       {tab === 'preview' && <div className="p-5">
         <div className="mb-2 flex items-baseline justify-between">
-          <h3 className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted">Va a quedar así</h3>
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted">{pick(language, 'Va a quedar así', 'The result')}</h3>
           <span className="tabular font-mono text-[10.5px] text-muted">
-            {durationLabel(result.freeMin)} libres desde {hhmm(fromMin)}
+            {durationLabel(result.freeMin)} {pick(language, 'libres desde', 'free from')} {clockLabel(fromMin)}
           </span>
         </div>
 
         {result.placed.length === 0 ? (
           <p className="py-6 text-center text-[12.5px] leading-snug text-muted">
             {reordering
-              ? 'No hay bloques por delante para reacomodar en este día.'
-              : 'No hay tareas pendientes que entren con esta configuración.'}
+              ? pick(language, 'No hay bloques por delante para reacomodar en este día.', 'There are no upcoming blocks to rearrange on this day.')
+              : pick(language, 'No hay tareas pendientes que entren con esta configuración.', 'No pending tasks fit with this setup.')}
           </p>
         ) : (
           <ul className="space-y-1">
             {result.placed.map((p) => (
               <li key={p.key} className="flex items-center gap-2.5 rounded-lg border border-line px-2.5 py-1.5">
-                <span className="tabular w-12 shrink-0 font-mono text-[11px] text-muted">{hhmm(p.startMin)}</span>
+                <span className="tabular w-16 shrink-0 font-mono text-[11px] text-muted">{clockLabel(p.startMin)}</span>
                 <span className="h-4 w-[3px] shrink-0 rounded-full" style={{ background: p.color }} />
                 <span className="min-w-0 flex-1 truncate text-[12.5px]">{p.title}</span>
                 <span className="tabular shrink-0 font-mono text-[10.5px] text-muted">
@@ -357,7 +360,7 @@ export function AutoplanModal({ open, onClose, initialSource }: { open: boolean;
                   onClick={() => setDropped((d) => [...d, p.key])}
                   className="shrink-0 rounded px-1.5 text-[11px] text-muted hover:text-ink"
                 >
-                  Sacar
+                  {pick(language, 'Sacar', 'Remove')}
                 </button>
               </li>
             ))}
@@ -383,38 +386,39 @@ function Leftovers({
   onInclude: (key: string) => void;
   reordering: boolean;
 }) {
+  const language = useStore((s) => s.settings.language);
   const total = items.length + dropped.length;
   if (total === 0) return null;
 
   return (
     <div className="mt-3 rounded-lg border border-dashed border-line p-3">
       <p className="mb-1.5 text-[11.5px] font-semibold" style={{ color: 'var(--now)' }}>
-        {total} {total === 1 ? 'queda' : 'quedan'} afuera
+        {total} {total === 1 ? pick(language, 'queda afuera', 'left out') : pick(language, 'quedan afuera', 'left out')}
       </p>
       <ul className="space-y-0.5">
         {items.map((l) => (
           <li key={l.key} className="flex items-baseline gap-2 text-[11.5px]">
             <span className="min-w-0 flex-1 truncate">{l.title}</span>
             <span className="tabular shrink-0 font-mono text-[10px] text-muted">
-              {durationLabel(l.durationMin)} · {l.reason}
+              {durationLabel(l.durationMin)} · {language === 'en' ? l.reason.replace('No queda espacio libre', 'No free space remains').replace(/El hueco más grande es de (\d+) min/, 'The largest gap is $1 min') : l.reason}
             </span>
           </li>
         ))}
         {dropped.map((l) => (
           <li key={l.key} className="flex items-baseline gap-2 text-[11.5px]">
             <span className="min-w-0 flex-1 truncate">{l.title}</span>
-            <span className="shrink-0 font-mono text-[10px] text-muted">la sacaste vos</span>
+            <span className="shrink-0 font-mono text-[10px] text-muted">{pick(language, 'la sacaste vos', 'removed manually')}</span>
             <button onClick={() => onInclude(l.key)} className="shrink-0 rounded px-1.5 text-[11px] text-muted hover:text-ink">
-              Incluir
+              {pick(language, 'Incluir', 'Include')}
             </button>
           </li>
         ))}
       </ul>
       <p className="mt-1.5 text-[11px] leading-snug text-muted">
-        {dropped.length > 0 && 'Si volvés a incluir alguna, se recalcula el reparto de tiempo con la nueva cantidad. '}
+        {dropped.length > 0 && pick(language, 'Si volvés a incluir alguna, se recalcula el reparto de tiempo con la nueva cantidad. ', 'If you include one again, time is recalculated for the new count. ')}
         {reordering
-          ? 'Lo que quede afuera se saca de la agenda y vuelve al panel de tareas como pendiente.'
-          : 'Siguen pendientes en su clasificación y también quedan visibles en Actividad. Podés correr la hora de fin o dejarlas para mañana.'}
+          ? pick(language, 'Lo que quede afuera se saca de la agenda y vuelve al panel de tareas como pendiente.', 'Anything left out is removed from the schedule and returned to the task panel as pending.')
+          : pick(language, 'Siguen pendientes en su clasificación y también quedan visibles en Actividad. Podés correr la hora de fin o dejarlas para mañana.', 'They remain pending in their classification and visible in Activity. Extend the end time or leave them for tomorrow.')}
       </p>
     </div>
   );
@@ -431,14 +435,15 @@ function ReassignTimeField({
   placedCount: number;
   autoFitMin: number | null;
 }) {
+  const language = useStore((s) => s.settings.language);
   return (
     <Field
-      label="Reasignar tiempo"
-      hint="Cambia la duración solo para esta tanda; no toca lo guardado en cada tarea."
+      label={pick(language, 'Reasignar tiempo', 'Reassign time')}
+      hint={pick(language, 'Cambia la duración solo para esta tanda; no toca lo guardado en cada tarea.', 'Changes duration only for this run; saved task durations are untouched.')}
     >
       <div className="space-y-2.5 rounded-lg border border-line p-3">
         <div className="flex items-center gap-2.5">
-          <span className="w-28 shrink-0 text-[12.5px] text-muted">Terminar antes de</span>
+          <span className="w-28 shrink-0 text-[12.5px] text-muted">{pick(language, 'Terminar antes de', 'Finish before')}</span>
           <TimeField value={cfg.untilMin} onCommit={(value) => setCfg({ untilMin: value })} />
         </div>
 
@@ -446,39 +451,39 @@ function ReassignTimeField({
           value={cfg.reassign}
           onChange={(v) => setCfg({ reassign: v })}
           options={[
-            { id: 'none', label: 'Como estaba' },
+            { id: 'none', label: pick(language, 'Como estaba', 'Keep current') },
             { id: 'manual', label: 'Manual' },
-            { id: 'auto', label: 'Automático' },
+            { id: 'auto', label: pick(language, 'Automático', 'Automatic') },
           ]}
         />
 
         {cfg.reassign === 'manual' && (
           <div className="flex items-center gap-2">
-            <NumField value={cfg.reassignMin} onCommit={(v) => setCfg({ reassignMin: v ?? 30 })} suffix="min cada una" />
+            <NumField value={cfg.reassignMin} onCommit={(v) => setCfg({ reassignMin: v ?? 30 })} suffix={pick(language, 'min cada una', 'min each')} />
           </div>
         )}
 
         {cfg.reassign === 'manual' && candidateCount > 0 && (
           <p className="text-[11.5px] leading-snug text-muted">
             {placedCount >= candidateCount
-              ? `Entran las ${candidateCount} tareas seleccionadas.`
-              : `Con ${cfg.reassignMin} min cada una entran ${placedCount} de ${candidateCount}. Achicá la duración o el rango si querés que entren todas.`}
+              ? pick(language, `Entran las ${candidateCount} tareas seleccionadas.`, `All ${candidateCount} selected tasks fit.`)
+              : pick(language, `Con ${cfg.reassignMin} min cada una entran ${placedCount} de ${candidateCount}. Achicá la duración o el rango si querés que entren todas.`, `At ${cfg.reassignMin} min each, ${placedCount} of ${candidateCount} fit. Shorten the duration or expand the range to fit all.`)}
           </p>
         )}
 
         {cfg.reassign === 'auto' && candidateCount > 0 && (
           <p className="text-[11.5px] leading-snug text-muted">
             {autoFitMin && placedCount >= candidateCount ? (
-              <>Le va a tocar <span className="font-semibold text-ink">{autoFitMin} min</span> a cada una de las {candidateCount}, para que entren todas.</>
+              <>{pick(language, 'Le va a tocar', 'Each gets')} <span className="font-semibold text-ink">{autoFitMin} min</span> {pick(language, `a cada una de las ${candidateCount}, para que entren todas.`, `across all ${candidateCount} so they fit.`)}</>
             ) : (
-              <>Ni con 10 min cada una entran las {candidateCount}: van a quedar {candidateCount - placedCount} afuera.</>
+              <>{pick(language, `Ni con 10 min cada una entran las ${candidateCount}: van a quedar ${candidateCount - placedCount} afuera.`, `Even at 10 min each, all ${candidateCount} do not fit: ${candidateCount - placedCount} will be left out.`)}</>
             )}
           </p>
         )}
 
         {cfg.reassign === 'none' && (
           <p className="text-[11.5px] leading-snug text-muted">
-            Cada tarea conserva su duración de siempre (o la de por defecto, si no tiene una fija).
+            {pick(language, 'Cada tarea conserva su duración de siempre (o la de por defecto, si no tiene una fija).', 'Each task keeps its usual duration, or the default if it has no fixed duration.')}
           </p>
         )}
       </div>

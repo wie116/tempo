@@ -3,6 +3,7 @@ import { fetchRemoteCounts, forcePushAll, pullAll, syncNow, useSync } from '../l
 import { cloudEnabled, supabase } from '../lib/supabase';
 import { useStore } from '../store';
 import { Btn, ConfirmModal } from './Modal';
+import { pick } from '../lib/i18n';
 
 export function SyncBadge() {
   const status = useSync((s) => s.status);
@@ -10,16 +11,17 @@ export function SyncBadge() {
   const pendingChanges = useSync((s) => s.pendingChanges);
   const [open, setOpen] = useState(false);
   const [askOut, setAskOut] = useState(false);
+  const language = useStore((s) => s.settings.language);
 
   if (!cloudEnabled) return null;
 
   const color = status === 'error' ? 'var(--now)' : status === 'syncing' ? 'var(--muted)' : 'var(--accent)';
   const label =
-    status === 'error' ? 'Error al sincronizar'
-    : status === 'syncing' ? 'Sincronizando…'
-    : pendingChanges ? 'Cambios pendientes'
-    : status === 'idle' ? 'Sincronizado'
-    : 'Sin conexión';
+    status === 'error' ? pick(language, 'Error al sincronizar', 'Sync error')
+    : status === 'syncing' ? pick(language, 'Sincronizando…', 'Syncing…')
+    : pendingChanges ? pick(language, 'Cambios pendientes', 'Pending changes')
+    : status === 'idle' ? pick(language, 'Sincronizado', 'Synced')
+    : pick(language, 'Sin conexión', 'Offline');
 
   return (
     <>
@@ -34,7 +36,7 @@ export function SyncBadge() {
           className="h-2 w-2 rounded-full"
           style={{ background: color, animation: status === 'syncing' ? 'pulse 1.2s infinite' : undefined }}
         />
-        <span className="hidden sm:inline">Cuenta</span>
+        <span className="hidden sm:inline">{pick(language, 'Cuenta', 'Account')}</span>
       </button>
 
       {open && <AccountPanel onClose={() => setOpen(false)} onSignOut={() => { setOpen(false); setAskOut(true); }} />}
@@ -43,10 +45,10 @@ export function SyncBadge() {
         open={askOut}
         onClose={() => setAskOut(false)}
         onConfirm={() => void supabase?.auth.signOut()}
-        title="Cerrar sesión"
-        message="Vas a volver a la pantalla de ingreso."
-        detail="Tus datos quedan guardados en tu cuenta. Al volver a entrar aparecen igual."
-        confirmLabel="Cerrar sesión"
+        title={pick(language, 'Cerrar sesión', 'Sign out')}
+        message={pick(language, 'Vas a volver a la pantalla de ingreso.', 'You will return to the sign-in screen.')}
+        detail={pick(language, 'Tus datos quedan guardados en tu cuenta. Al volver a entrar aparecen igual.', 'Your data stays saved in your account and will be here when you sign in again.')}
+        confirmLabel={pick(language, 'Cerrar sesión', 'Sign out')}
         danger={false}
       />
     </>
@@ -65,6 +67,9 @@ function AccountPanel({ onClose, onSignOut }: { onClose: () => void; onSignOut: 
   const [email, setEmail] = useState('');
   const [remote, setRemote] = useState<{ lists: number; tasks: number; blocks: number } | null>(null);
   const [busy, setBusy] = useState(false);
+  const language = useStore((s) => s.settings.language);
+  const locale = useStore((s) => s.settings.locale);
+  const timeFormat = useStore((s) => s.settings.timeFormat);
 
   const refresh = () => void fetchRemoteCounts().then(setRemote);
 
@@ -89,8 +94,8 @@ function AccountPanel({ onClose, onSignOut }: { onClose: () => void; onSignOut: 
       onPointerDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="modal-panel w-full max-w-sm rounded-2xl border border-line bg-surface p-5" style={{ boxShadow: 'var(--shadow-modal)' }}>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted">Cuenta</p>
-        <p className="mt-1 truncate text-[14px] font-medium">{email || 'Cargando…'}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted">{pick(language, 'Cuenta', 'Account')}</p>
+        <p className="mt-1 truncate text-[14px] font-medium">{email || pick(language, 'Cargando…', 'Loading…')}</p>
 
         <p
           className="mt-2 flex items-center gap-2 text-[12.5px]"
@@ -100,7 +105,7 @@ function AccountPanel({ onClose, onSignOut }: { onClose: () => void; onSignOut: 
             className="h-2 w-2 rounded-full"
             style={{ background: status === 'error' ? 'var(--now)' : status === 'syncing' ? 'var(--muted)' : 'var(--accent)' }}
           />
-          {status === 'error' ? 'Error al sincronizar' : status === 'syncing' ? 'Sincronizando…' : 'Sincronizado'}
+          {status === 'error' ? pick(language, 'Error al sincronizar', 'Sync error') : status === 'syncing' ? pick(language, 'Sincronizando…', 'Syncing…') : pick(language, 'Sincronizado', 'Synced')}
         </p>
         {lastError && (
           <p className="mt-1.5 rounded-lg border border-dashed px-2.5 py-2 text-[11.5px] leading-snug"
@@ -109,49 +114,49 @@ function AccountPanel({ onClose, onSignOut }: { onClose: () => void; onSignOut: 
           </p>
         )}
         {!lastError && <p className="mt-1 text-[10.5px] text-muted">
-          {pendingChanges ? 'Hay cambios esperando para subir.' : lastSyncedAt ? `Última sincronización: ${new Date(lastSyncedAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}` : 'Preparando la primera sincronización.'}
+          {pendingChanges ? pick(language, 'Hay cambios esperando para subir.', 'Changes are waiting to upload.') : lastSyncedAt ? `${pick(language, 'Última sincronización', 'Last sync')}: ${new Date(lastSyncedAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: timeFormat === '12h' })}` : pick(language, 'Preparando la primera sincronización.', 'Preparing the first sync.')}
         </p>}
         {concurrentChange && <div className="mt-2 rounded-lg border border-line bg-surface-2 px-2.5 py-2 text-[11.5px] leading-snug">
-          Detectamos cambios locales y remotos al mismo tiempo. Tempo subió primero lo local y luego actualizó la agenda para evitar pérdidas.
-          <button onClick={() => setSync({ concurrentChange: false })} className="ml-1 font-semibold underline">Entendido</button>
+          {pick(language, 'Detectamos cambios locales y remotos al mismo tiempo. Tempo subió primero lo local y luego actualizó la agenda para evitar pérdidas.', 'Local and remote changes happened at the same time. Tempo uploaded local changes first, then refreshed the schedule to avoid data loss.')}
+          <button onClick={() => setSync({ concurrentChange: false })} className="ml-1 font-semibold underline">{pick(language, 'Entendido', 'Got it')}</button>
         </div>}
 
         {/* Contraste entre lo que tenés acá y lo que hay realmente en el servidor */}
         <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg border border-line p-2.5 text-center">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.1em] text-muted">Bloques</p>
+            <p className="text-[10px] uppercase tracking-[0.1em] text-muted">{pick(language, 'Bloques', 'Blocks')}</p>
             <p className="tabular font-mono text-[14px] font-bold">
               {localBlocks} <span className="text-muted">/ {remote ? remote.blocks : '…'}</span>
             </p>
           </div>
           <div>
-            <p className="text-[10px] uppercase tracking-[0.1em] text-muted">Tareas</p>
+            <p className="text-[10px] uppercase tracking-[0.1em] text-muted">{pick(language, 'Tareas', 'Tasks')}</p>
             <p className="tabular font-mono text-[14px] font-bold">
               {localTasks} <span className="text-muted">/ {remote ? remote.tasks : '…'}</span>
             </p>
           </div>
           <div>
-            <p className="text-[10px] uppercase tracking-[0.1em] text-muted">Grupos</p>
+            <p className="text-[10px] uppercase tracking-[0.1em] text-muted">{pick(language, 'Grupos', 'Groups')}</p>
             <p className="tabular font-mono text-[14px] font-bold text-muted">{remote ? remote.lists : '…'}</p>
           </div>
         </div>
-        <p className="mt-1 text-center text-[10.5px] text-muted">acá / en la nube</p>
+        <p className="mt-1 text-center text-[10.5px] text-muted">{pick(language, 'acá / en la nube', 'local / cloud')}</p>
 
         {mismatch && (
           <p className="mt-2 rounded-lg border border-dashed px-2.5 py-2 text-[11.5px] leading-snug"
             style={{ borderColor: 'var(--now)', color: 'var(--now)' }}>
-            Los números no coinciden. Usá <span className="font-semibold">Subir todo</span> para forzar la carga.
+            {pick(language, 'Los números no coinciden. Usá', 'The counts do not match. Use')} <span className="font-semibold">{pick(language, 'Subir todo', 'Upload all')}</span> {pick(language, 'para forzar la carga.', 'to force an upload.')}
           </p>
         )}
 
         <div className="mt-4 flex flex-wrap gap-2">
-          <Btn onClick={() => void run(async () => { await syncNow(); })} disabled={busy}>Sincronizar</Btn>
-          <Btn onClick={() => void run(forcePushAll)} disabled={busy}>Subir todo</Btn>
-          <Btn onClick={() => void run(pullAll)} disabled={busy}>Bajar de la nube</Btn>
+          <Btn onClick={() => void run(async () => { await syncNow(); })} disabled={busy}>{pick(language, 'Sincronizar', 'Sync')}</Btn>
+          <Btn onClick={() => void run(forcePushAll)} disabled={busy}>{pick(language, 'Subir todo', 'Upload all')}</Btn>
+          <Btn onClick={() => void run(pullAll)} disabled={busy}>{pick(language, 'Bajar de la nube', 'Download from cloud')}</Btn>
         </div>
         <div className="mt-2 flex justify-between gap-2">
-          <Btn variant="danger" onClick={onSignOut}>Cerrar sesión</Btn>
-          <Btn variant="primary" onClick={onClose}>Listo</Btn>
+          <Btn variant="danger" onClick={onSignOut}>{pick(language, 'Cerrar sesión', 'Sign out')}</Btn>
+          <Btn variant="primary" onClick={onClose}>{pick(language, 'Listo', 'Done')}</Btn>
         </div>
       </div>
     </div>
