@@ -281,4 +281,4 @@ export const Constants = {
 
           }
         }
-} as cons
+} as const

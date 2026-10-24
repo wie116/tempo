@@ -106,6 +106,13 @@ Database metadata, synchronization behavior, task lifecycle, and timezone behavi
 
 ## Implementation log
 
+### 2026-10-24 — Fixed: GitHub Pages production build
+
+- Diagnosed the failed GitHub Pages run for commit `ef81069`: the `npm run build` step stopped because both generated Supabase contracts ended with the truncated TypeScript expression `} as cons`.
+- Restored the valid generated terminal expression `} as const` in the application and Edge Function database contracts.
+- Verification passed locally with the same production build command used by GitHub Actions, all 21 application tests, all 6 Edge Function static checks, and `git diff --check`.
+- Application UI/behavior changed: none. Database schema changed: none. Supabase data changed: none.
+
 ### 2026-10-24 — Implemented: previous-day overdue cleanup
 
 - User approved the interactive preview and its confirmation flow.
