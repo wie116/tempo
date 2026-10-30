@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   build:
+    if: vars.TEMPO_PILOT_ACTIVE != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
